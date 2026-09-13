@@ -15,7 +15,7 @@ function validateInitData(initData: string, botToken: string) {
 
   const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
   const calculated = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
-  if (!crypto.timingSafeEqual(Buffer.from(calculated), Buffer.from(hash))) return null;
+  if (calculated.length !== hash.length || !crypto.timingSafeEqual(Buffer.from(calculated), Buffer.from(hash))) return null;
 
   const authDate = Number(params.get("auth_date"));
   if (!authDate || Date.now() / 1000 - authDate > 86400) return null;
@@ -30,35 +30,46 @@ export async function POST(req: NextRequest) {
     const { initData } = await req.json();
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const secretKeysRaw = process.env.SUPABASE_SECRET_KEYS;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!botToken || !url || !secretKeysRaw) {
+    if (!botToken || !url || !serviceRoleKey) {
       return NextResponse.json({ error: "ViewCash server is not fully configured" }, { status: 500 });
     }
 
     const telegramUser = validateInitData(String(initData || ""), botToken);
     if (!telegramUser) return NextResponse.json({ error: "Invalid Telegram session" }, { status: 401 });
 
-    const secretKeys = JSON.parse(secretKeysRaw);
-    const supabase = createClient(url, secretKeys.default);
+    const supabase = createClient(url, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
     const referralCode = `VC${telegramUser.id.toString(36).toUpperCase()}`;
 
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("users")
       .select("id,username,first_name,last_name,referral_code")
       .eq("telegram_id", telegramUser.id)
       .maybeSingle();
+    if (existingError) throw existingError;
 
     let user = existing;
     if (!user) {
       const { data, error } = await supabase
         .from("users")
-        .insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode })
+        .insert({
+          telegram_id: telegramUser.id,
+          username: telegramUser.username ?? null,
+          first_name: telegramUser.first_name ?? null,
+          last_name: telegramUser.last_name ?? null,
+          referral_code: referralCode,
+        })
         .select("id,username,first_name,last_name,referral_code")
         .single();
       if (error) throw error;
       user = data;
-      await supabase.from("wallets").insert({ user_id: user.id });
+
+      const { error: walletInsertError } = await supabase.from("wallets").insert({ user_id: user.id });
+      if (walletInsertError) throw walletInsertError;
     }
 
     const { data: wallet, error: walletError } = await supabase
