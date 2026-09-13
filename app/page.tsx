@@ -18,12 +18,56 @@ export default function HomePage() {
   const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
-    const webApp = window.Telegram?.WebApp;
-    if (!webApp) { setStatus("Open ViewCash from Telegram"); return; }
-    webApp.ready(); webApp.expand();
-    fetch("/api/telegram/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ initData: webApp.initData }) })
-      .then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); setBalance(Number(d.balance || 0)); setReferralBalance(Number(d.referral_balance || 0)); setDisplayName(d.display_name || d.username || d.first_name || "Telegram User"); setStatus(d.display_name || d.username || d.first_name || "Connected"); })
-      .catch(() => setStatus("Telegram connection pending"));
+    let cancelled = false;
+    let attempts = 0;
+
+    const connect = async () => {
+      if (cancelled) return;
+      const webApp = window.Telegram?.WebApp;
+
+      if (!webApp) {
+        attempts += 1;
+        if (attempts < 20) {
+          setTimeout(connect, 250);
+          return;
+        }
+        setStatus("Telegram Mini App not detected");
+        return;
+      }
+
+      try {
+        webApp.ready();
+        webApp.expand();
+
+        if (!webApp.initData) {
+          setStatus("Telegram session data missing");
+          return;
+        }
+
+        const response = await fetch("/api/telegram/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ initData: webApp.initData }),
+          cache: "no-store",
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `Connection failed (${response.status})`);
+        }
+
+        if (cancelled) return;
+        setBalance(Number(data.balance || 0));
+        setReferralBalance(Number(data.referral_balance || 0));
+        setDisplayName(data.display_name || data.username || data.first_name || "Telegram User");
+        setStatus(data.display_name || data.username || data.first_name || "Connected");
+      } catch (error) {
+        if (!cancelled) setStatus(error instanceof Error ? error.message : "Unable to connect ViewCash");
+      }
+    };
+
+    connect();
+    return () => { cancelled = true; };
   }, []);
 
   const go = (section: Section) => setActive(section);
