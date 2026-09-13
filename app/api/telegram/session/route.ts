@@ -7,27 +7,30 @@ function validateInitData(initData: string, botToken: string) {
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
   if (!hash) throw new Error("Telegram initData has no hash");
-
   params.delete("hash");
   const dataCheckString = [...params.entries()]
-    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
-
   const secretKey = crypto.createHmac("sha256", botToken.trim()).update("WebAppData").digest();
   const calculated = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
-
   if (calculated.length !== hash.length || !crypto.timingSafeEqual(Buffer.from(calculated), Buffer.from(hash))) {
     throw new Error("Telegram initData hash is invalid");
   }
-
   const authDate = Number(params.get("auth_date"));
   if (!authDate) throw new Error("Telegram initData has no auth_date");
   if (Date.now() / 1000 - authDate > 86400) throw new Error("Telegram initData has expired");
-
   const userRaw = params.get("user");
   if (!userRaw) throw new Error("Telegram initData has no user");
-  return JSON.parse(userRaw) as { id: number; username?: string; first_name?: string; last_name?: string };
+  try { return JSON.parse(userRaw) as { id: number; username?: string; first_name?: string; last_name?: string }; }
+  catch { throw new Error("Telegram user data is invalid"); }
+}
+
+async function getConfiguredBot(token: string) {
+  const response = await fetch(`https://api.telegram.org/bot${token.trim()}/getMe`, { cache: "no-store" });
+  const result = await response.json();
+  if (!result.ok) return null;
+  return result.result as { id: number; username?: string; first_name?: string };
 }
 
 export async function POST(req: NextRequest) {
@@ -38,14 +41,23 @@ export async function POST(req: NextRequest) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!botToken || !url || !serviceRoleKey) throw new Error("ViewCash server is not fully configured");
 
-    const telegramUser = validateInitData(String(initData || ""), botToken);
+    let telegramUser;
+    try {
+      telegramUser = validateInitData(String(initData || ""), botToken);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Telegram initData hash is invalid") {
+        const bot = await getConfiguredBot(botToken);
+        const botLabel = bot?.username ? `@${bot.username}` : bot?.first_name || "unknown bot";
+        throw new Error(`Telegram hash mismatch. Vercel TELEGRAM_BOT_TOKEN currently belongs to ${botLabel}. It must be the token for the exact ViewCash bot that opened this Mini App.`);
+      }
+      throw error;
+    }
+
     const supabase = createClient(url, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const referralCode = `VC${telegramUser.id.toString(36).toUpperCase()}`;
-
     const { data: existing, error: existingError } = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code").eq("telegram_id", telegramUser.id).maybeSingle();
     if (existingError) throw existingError;
     let user = existing;
-
     if (!user) {
       const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode }).select("id,telegram_id,username,first_name,last_name,referral_code").single();
       if (error) throw error;
@@ -57,7 +69,6 @@ export async function POST(req: NextRequest) {
       if (error) throw error;
       user = data;
     }
-
     const { data: wallet, error: walletError } = await supabase.from("wallets").select("balance,referral_balance,total_earned,total_withdrawn").eq("user_id", user.id).single();
     if (walletError) throw walletError;
     const displayName = user.username ? `@${user.username}` : user.first_name || "Telegram User";
