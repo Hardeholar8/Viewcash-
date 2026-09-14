@@ -6,8 +6,12 @@ const SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
 export async function GET(req: NextRequest) {
   try {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!serviceKey) return new NextResponse("server_config_error", { status: 500 });
+    const expectedSecret = process.env.MONETAG_POSTBACK_SECRET?.trim();
+    if (!serviceKey || !expectedSecret) return new NextResponse("server_config_error", { status: 500 });
+
     const q = req.nextUrl.searchParams;
+    if (q.get("token") !== expectedSecret) return new NextResponse("unauthorized", { status: 401 });
+
     const requestVar = String(q.get("request_var") || "").trim();
     const eventType = String(q.get("event_type") || "").trim().toLowerCase();
     const rewardEventType = String(q.get("reward_event_type") || "").trim().toLowerCase();
