@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
+const MONETAG_ZONE_ID = "11801942";
 const BOT_TOKEN = () => (process.env.TELEGRAM_BOT_TOKEN || "").trim();
 
 function getTelegramUser(initData: string) {
@@ -43,17 +44,19 @@ export async function POST(req: NextRequest) {
     if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ACTIVE" }, { status: 403 });
     if (!user.activated) return NextResponse.json({ error: "ACCOUNT_ACTIVATION_REQUIRED" }, { status: 403 });
 
-    const requestVar = `watch_ads_${user.id}_${Date.now()}_${crypto.randomBytes(6).toString("hex")}`;
-    const ymid = `vc_${user.id}_${crypto.randomBytes(8).toString("hex")}`;
+    // Generate both identifiers on the server and store them with the exact ad session.
+    const requestVar = `watch_ads_${Date.now()}_${crypto.randomBytes(12).toString("hex")}`;
+    const ymid = `vc_${crypto.randomBytes(16).toString("hex")}`;
     const { error } = await db.from("ad_sessions").insert({
       user_id: user.id,
       provider: "monetag",
       request_var: requestVar,
+      ymid,
       status: "started",
     });
     if (error) return NextResponse.json({ error: "AD_SESSION_ERROR" }, { status: 500 });
 
-    return NextResponse.json({ ok: true, request_var: requestVar, ymid });
+    return NextResponse.json({ ok: true, request_var: requestVar, ymid, zone_id: MONETAG_ZONE_ID });
   } catch (error) {
     console.error("ViewCash ad start error", error);
     return NextResponse.json({ error: "AD_SESSION_ERROR" }, { status: 500 });
