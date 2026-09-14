@@ -3,10 +3,6 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
-
-// ViewCash uses one dedicated Supabase project. Keep the server-side URL fixed so
-// an accidentally changed NEXT_PUBLIC_SUPABASE_URL cannot send API calls to the
-// Vercel site (which returns HTML instead of PostgREST JSON).
 const VIEWCASH_SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
 
 function validateInitData(initData: string, botToken: string) {
@@ -15,33 +11,21 @@ function validateInitData(initData: string, botToken: string) {
   const hash = params.get("hash");
   if (!hash) throw new Error("TELEGRAM_HASH_MISSING");
   params.delete("hash");
-  const dataCheckString = [...params.entries()]
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("\n");
+  const dataCheckString = [...params.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, value]) => `${key}=${value}`).join("\n");
   const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken.trim()).digest();
   const calculated = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
-  if (calculated.length !== hash.length || !crypto.timingSafeEqual(Buffer.from(calculated), Buffer.from(hash))) {
-    throw new Error("TELEGRAM_HASH_INVALID");
-  }
+  if (calculated.length !== hash.length || !crypto.timingSafeEqual(Buffer.from(calculated), Buffer.from(hash))) throw new Error("TELEGRAM_HASH_INVALID");
   const authDate = Number(params.get("auth_date"));
   if (!authDate) throw new Error("TELEGRAM_AUTH_DATE_MISSING");
   if (Date.now() / 1000 - authDate > 86400) throw new Error("TELEGRAM_SESSION_EXPIRED");
   const userRaw = params.get("user");
   if (!userRaw) throw new Error("TELEGRAM_USER_MISSING");
-  try {
-    return JSON.parse(userRaw) as { id: number; username?: string; first_name?: string; last_name?: string };
-  } catch {
-    throw new Error("TELEGRAM_USER_INVALID");
-  }
+  try { return { user: JSON.parse(userRaw) as { id: number; username?: string; first_name?: string; last_name?: string }, startParam: params.get("start_param") || "" }; }
+  catch { throw new Error("TELEGRAM_USER_INVALID"); }
 }
 
 function supabaseError(prefix: string, error: { code?: string; message?: string; details?: string; hint?: string } | null) {
-  const code = error?.code || "NO_CODE";
-  const message = (error?.message || "NO_MESSAGE").replace(/[\r\n]+/g, " ").slice(0, 140);
-  const details = (error?.details || "").replace(/[\r\n]+/g, " ").slice(0, 100);
-  const hint = (error?.hint || "").replace(/[\r\n]+/g, " ").slice(0, 100);
-  return `${prefix}:${code}:${message}${details ? `:${details}` : ""}${hint ? `:${hint}` : ""}`;
+  return `${prefix}:${error?.code || "NO_CODE"}:${(error?.message || "NO_MESSAGE").replace(/[\r\n]+/g, " ").slice(0, 140)}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -50,50 +34,47 @@ export async function POST(req: NextRequest) {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!botToken || !serviceRoleKey) throw new Error("VIEWCASH_SERVER_CONFIG_ERROR");
-
-    const telegramUser = validateInitData(String(initData || ""), botToken);
-    const supabase = createClient(VIEWCASH_SUPABASE_URL, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+    const { user: telegramUser, startParam } = validateInitData(String(initData || ""), botToken);
+    const supabase = createClient(VIEWCASH_SUPABASE_URL, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const referralCode = `VC${telegramUser.id.toString(36).toUpperCase()}`;
 
-    const { data: existing, error: lookupError } = await supabase
-      .from("users")
-      .select("id,telegram_id,username,first_name,last_name,referral_code")
-      .eq("telegram_id", telegramUser.id)
-      .maybeSingle();
+    const { data: existing, error: lookupError } = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,activated").eq("telegram_id", telegramUser.id).maybeSingle();
     if (lookupError) throw new Error(supabaseError("SUPABASE_USER_LOOKUP_ERROR", lookupError));
 
     let user = existing;
+    let isNew = false;
     if (!user) {
-      const { data, error } = await supabase.from("users").insert({
-        telegram_id: telegramUser.id,
-        username: telegramUser.username ?? null,
-        first_name: telegramUser.first_name ?? null,
-        last_name: telegramUser.last_name ?? null,
-        referral_code: referralCode,
-      }).select("id,telegram_id,username,first_name,last_name,referral_code").single();
+      isNew = true;
+      let referredBy: string | null = null;
+      if (startParam) {
+        const { data: referrer } = await supabase.from("users").select("id").eq("referral_code", startParam).maybeSingle();
+        if (referrer && referrer.id !== undefined) referredBy = referrer.id;
+      }
+      const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode, referred_by: referredBy }).select("id,telegram_id,username,first_name,last_name,referral_code,activated").single();
       if (error) throw new Error(supabaseError("SUPABASE_USER_CREATE_ERROR", error));
       user = data;
       const { error: walletError } = await supabase.from("wallets").insert({ user_id: user.id });
       if (walletError) throw new Error(supabaseError("SUPABASE_WALLET_CREATE_ERROR", walletError));
+      const { data: setting } = await supabase.from("settings").select("value").eq("key", "welcome_bonus_coins").maybeSingle();
+      const welcomeCoins = Number((setting?.value as { amount?: number } | null)?.amount || 0);
+      if (welcomeCoins > 0) {
+        const reference = `welcome:${user.id}`;
+        const { error: txError } = await supabase.from("transactions").insert({ user_id: user.id, type: "adjustment", amount: welcomeCoins, balance_type: "main", reference, description: "Welcome bonus coins" });
+        if (!txError) await supabase.from("wallets").update({ coins: welcomeCoins, total_coins_earned: welcomeCoins }).eq("user_id", user.id);
+      }
+      if (referredBy) {
+        await supabase.from("referrals").insert({ referrer_id: referredBy, referred_user_id: user.id, reward_amount: 0, status: "pending" });
+      }
     } else {
-      const { data, error } = await supabase.from("users").update({
-        username: telegramUser.username ?? null,
-        first_name: telegramUser.first_name ?? null,
-        last_name: telegramUser.last_name ?? null,
-      }).eq("id", user.id).select("id,telegram_id,username,first_name,last_name,referral_code").single();
+      const { data, error } = await supabase.from("users").update({ username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null }).eq("id", user.id).select("id,telegram_id,username,first_name,last_name,referral_code,activated").single();
       if (error) throw new Error(supabaseError("SUPABASE_USER_UPDATE_ERROR", error));
       user = data;
     }
 
-    const { data: wallet, error: walletError } = await supabase.from("wallets")
-      .select("balance,referral_balance,total_earned,total_withdrawn")
-      .eq("user_id", user.id).single();
+    const { data: wallet, error: walletError } = await supabase.from("wallets").select("coins,referral_coins,total_coins_earned,total_coins_withdrawn,balance,referral_balance,total_earned,total_withdrawn").eq("user_id", user.id).single();
     if (walletError) throw new Error(supabaseError("SUPABASE_WALLET_LOOKUP_ERROR", walletError));
-
     const displayName = user.username ? `@${user.username}` : user.first_name || "Telegram User";
-    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, balance: wallet.balance ?? 0, referral_balance: wallet.referral_balance ?? 0 });
+    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, activated: Boolean(user.activated), coins: Number(wallet.coins ?? 0), referral_coins: Number(wallet.referral_coins ?? 0), total_coins_earned: Number(wallet.total_coins_earned ?? 0), total_coins_withdrawn: Number(wallet.total_coins_withdrawn ?? 0), balance: Number(wallet.coins ?? 0), referral_balance: Number(wallet.referral_coins ?? 0), new_user: isNew });
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR" }, { status: 401 });
