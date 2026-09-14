@@ -2,36 +2,58 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
+const MONETAG_ZONE_ID = "11801942";
 
 export async function GET(req: NextRequest) {
   try {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const expectedSecret = process.env.MONETAG_POSTBACK_SECRET?.trim();
-    if (!serviceKey || !expectedSecret) return new NextResponse("server_config_error", { status: 500 });
+    if (!serviceKey) return new NextResponse("server_config_error", { status: 500 });
 
     const q = req.nextUrl.searchParams;
-    if (q.get("token") !== expectedSecret) return new NextResponse("unauthorized", { status: 401 });
-
     const requestVar = String(q.get("request_var") || "").trim();
     const eventType = String(q.get("event_type") || "").trim().toLowerCase();
     const rewardEventType = String(q.get("reward_event_type") || "").trim().toLowerCase();
     const telegramId = String(q.get("telegram_id") || "").trim();
     const ymid = String(q.get("ymid") || "").trim();
+    const zoneId = String(q.get("zone_id") || "").trim();
     const estimatedPrice = Number(q.get("estimated_price") || 0);
+
+    // Monetag's postback screen does not provide a custom token field.
+    // Authenticate the callback by matching the high-entropy ymid + request_var
+    // that ViewCash generated and stored before the ad was shown.
     if (!requestVar || !ymid) return new NextResponse("ignored", { status: 200 });
+    if (zoneId && zoneId !== MONETAG_ZONE_ID) return new NextResponse("ignored", { status: 200 });
     if (eventType !== "impression" || rewardEventType !== "valued") return new NextResponse("ignored", { status: 200 });
 
     const db = createClient(SUPABASE_URL, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    const { data: session, error: sessionError } = await db.from("ad_sessions").select("id,user_id,status").eq("request_var", requestVar).eq("provider", "monetag").maybeSingle();
-    if (sessionError || !session) return new NextResponse("session_not_found", { status: 404 });
+    const { data: session, error: sessionError } = await db
+      .from("ad_sessions")
+      .select("id,user_id,status,ymid,request_var")
+      .eq("request_var", requestVar)
+      .eq("ymid", ymid)
+      .eq("provider", "monetag")
+      .maybeSingle();
+    if (sessionError) return new NextResponse("database_error", { status: 500 });
+    if (!session) return new NextResponse("ignored", { status: 200 });
     if (session.status === "completed") return new NextResponse("already_processed", { status: 200 });
-    if (session.status !== "started") return new NextResponse("invalid_session", { status: 409 });
+    if (session.status !== "started") return new NextResponse("ignored", { status: 200 });
 
-    const { data: user } = await db.from("users").select("id,telegram_id,activated,status").eq("id", session.user_id).maybeSingle();
-    if (!user || user.status !== "active" || !user.activated) return new NextResponse("user_not_eligible", { status: 403 });
-    if (telegramId && telegramId !== String(user.telegram_id)) return new NextResponse("telegram_mismatch", { status: 403 });
+    const { data: user, error: userError } = await db
+      .from("users")
+      .select("id,telegram_id,activated,status")
+      .eq("id", session.user_id)
+      .maybeSingle();
+    if (userError) return new NextResponse("database_error", { status: 500 });
+    if (!user || user.status !== "active" || !user.activated) return new NextResponse("ignored", { status: 200 });
+    if (telegramId && telegramId !== String(user.telegram_id)) return new NextResponse("ignored", { status: 200 });
 
-    const { data: setting } = await db.from("settings").select("value").eq("key", "ad_reward_coins").maybeSingle();
+    const { data: setting, error: settingError } = await db
+      .from("settings")
+      .select("value")
+      .eq("key", "ad_reward_coins")
+      .maybeSingle();
+    if (settingError) return new NextResponse("database_error", { status: 500 });
+
     const rewardCoins = Number((setting?.value as { amount?: number } | null)?.amount ?? 100);
     if (!Number.isFinite(rewardCoins) || rewardCoins <= 0) return new NextResponse("reward_not_configured", { status: 500 });
 
@@ -44,7 +66,7 @@ export async function GET(req: NextRequest) {
       p_reward_coins: rewardCoins,
     });
     if (error) return new NextResponse("reward_credit_failed", { status: 500 });
-    if (data?.error === "USER_NOT_ELIGIBLE") return new NextResponse("user_not_eligible", { status: 403 });
+    if (data?.error === "USER_NOT_ELIGIBLE") return new NextResponse("ignored", { status: 200 });
     if (data?.ok) return new NextResponse(data.duplicate ? "already_processed" : "ok", { status: 200 });
     return new NextResponse("reward_credit_failed", { status: 500 });
   } catch (error) {
