@@ -11,20 +11,14 @@ function validateInitData(initData: string, botToken: string) {
 
   params.delete("hash");
 
-  // Telegram requires the fields to be sorted by their raw key values.
-  // Use explicit code-point comparison rather than localeCompare so the
-  // result is deterministic across Vercel/server locales.
   const dataCheckString = [...params.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
 
-  // Telegram Mini App validation:
-  // secret_key = HMAC-SHA256("WebAppData", bot_token)
-  // hash       = HMAC-SHA256(data_check_string, secret_key)
   const secretKey = crypto
-    .createHmac("sha256", botToken.trim())
-    .update("WebAppData")
+    .createHmac("sha256", "WebAppData")
+    .update(botToken.trim())
     .digest();
   const calculated = crypto
     .createHmac("sha256", secretKey)
@@ -59,6 +53,16 @@ function validateInitData(initData: string, botToken: string) {
   }
 }
 
+async function getConfiguredBot(token: string) {
+  const response = await fetch(
+    `https://api.telegram.org/bot${token.trim()}/getMe`,
+    { cache: "no-store" },
+  );
+  const result = await response.json();
+  if (!result.ok) return null;
+  return result.result as { id: number; username?: string; first_name?: string };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { initData } = await req.json();
@@ -70,7 +74,19 @@ export async function POST(req: NextRequest) {
       throw new Error("ViewCash server is not fully configured");
     }
 
-    const telegramUser = validateInitData(String(initData || ""), botToken);
+    let telegramUser;
+    try {
+      telegramUser = validateInitData(String(initData || ""), botToken);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Telegram initData hash is invalid") {
+        const bot = await getConfiguredBot(botToken);
+        const botLabel = bot?.username ? `@${bot.username}` : bot?.first_name || "unknown bot";
+        throw new Error(
+          `Telegram validation mismatch. Vercel token belongs to ${botLabel} (ID ${bot?.id ?? "unknown"}), but the Mini App data hash does not match this token. This confirms the deployed server token and Telegram-generated initData are not using the same bot credentials.`,
+        );
+      }
+      throw error;
+    }
 
     const supabase = createClient(url, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
