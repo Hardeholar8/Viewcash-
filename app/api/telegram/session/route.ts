@@ -33,7 +33,7 @@ function supabaseError(prefix: string, error: { code?: string; message?: string;
 
 const isTransient = (message: string) => /gateway timeout|bad gateway|service unavailable|failed to get project config|timeout|timed out|fetch failed|network|502|503|504/i.test(message);
 
-async function lookupUser(supabase: ReturnType<typeof createClient>, telegramId: number) {
+async function lookupUser(supabase: any, telegramId: number): Promise<any> {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,activated").eq("telegram_id", telegramId).maybeSingle();
@@ -45,7 +45,7 @@ async function lookupUser(supabase: ReturnType<typeof createClient>, telegramId:
   throw new Error(supabaseError("SUPABASE_USER_LOOKUP_ERROR", lastError));
 }
 
-async function lookupWallet(supabase: ReturnType<typeof createClient>, userId: string) {
+async function lookupWallet(supabase: any, userId: string): Promise<any> {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const result = await supabase.from("wallets").select("coins,referral_coins,total_coins_earned,total_coins_withdrawn").eq("user_id", userId).maybeSingle();
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     const supabase = createClient(VIEWCASH_SUPABASE_URL, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const referralCode = `VC${telegramUser.id.toString(36).toUpperCase()}`;
 
-    let user = await lookupUser(supabase, telegramUser.id);
+    let user: any = await lookupUser(supabase, telegramUser.id);
     let isNew = false;
 
     if (!user) {
