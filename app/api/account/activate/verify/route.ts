@@ -18,12 +18,17 @@ function telegramUser(initData: string, token: string) {
   return JSON.parse(raw) as { id: number };
 }
 
+function cleanSecret(value: string) {
+  return value.replace(/[\r\n\t]/g, "").trim();
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { initData, tx_ref, transaction_id } = await req.json();
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const flutterwaveSecret = process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || process.env.SECRET_KEY;
+    const rawFlutterwaveSecret = process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || process.env.SECRET_KEY;
+    const flutterwaveSecret = rawFlutterwaveSecret ? cleanSecret(rawFlutterwaveSecret) : "";
     if (!token || !key) throw new Error("SERVER_CONFIG_ERROR");
     if (!flutterwaveSecret) throw new Error("FLUTTERWAVE_NOT_CONFIGURED");
     if (!tx_ref && !transaction_id) return NextResponse.json({ error: "MISSING_PAYMENT_REFERENCE" }, { status: 400 });
@@ -42,7 +47,7 @@ export async function POST(req: NextRequest) {
     const j = await r.json().catch(() => ({}));
     const payment = j?.data || {};
     if (!r.ok || j.status !== "success" || payment.status !== "successful") {
-      return NextResponse.json({ error: payment.status === "pending" ? "Payment is still being confirmed. Please wait a moment and try again." : "Payment verification failed.", verified: false, payment_status: payment.status || null }, { status: 400 });
+      return NextResponse.json({ error: payment.status === "pending" ? "Payment is still being confirmed. Please wait a moment and try again." : "Payment verification failed. No activation was made.", verified: false, payment_status: payment.status || null }, { status: 400 });
     }
 
     const verifiedRef = String(payment.tx_ref || tx_ref || "").trim();
@@ -57,7 +62,7 @@ export async function POST(req: NextRequest) {
     if (!data?.ok) return NextResponse.json({ error: String(data?.error || "ACTIVATION_FAILED") }, { status: 400 });
     return NextResponse.json({ ...data, verified: true, amount: Number(payment.amount), tx_ref: verifiedRef });
   } catch (error) {
-    console.error("ViewCash activation verification error", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to verify activation payment." }, { status: 500 });
+    console.error("ViewCash activation verification error", error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "Unable to confirm the payment right now. Please try again." }, { status: 500 });
   }
 }
