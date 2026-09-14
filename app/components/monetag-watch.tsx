@@ -10,11 +10,13 @@ declare global {
   }
 }
 
+const DEFAULT_MONETAG_ZONE = "11801942";
+
 export default function MonetagWatch({ initData }: { initData: string }) {
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const zone = process.env.NEXT_PUBLIC_MONETAG_ZONE_ID?.trim() || "";
+  const zone = process.env.NEXT_PUBLIC_MONETAG_ZONE_ID?.trim() || DEFAULT_MONETAG_ZONE;
 
   useEffect(() => {
     if (!zone) return;
