@@ -26,16 +26,12 @@ export default function WithdrawalAccountVerification() {
     const enhance = async () => {
       if (disposed || window.location.pathname !== "/") return;
       const selects = Array.from(document.querySelectorAll("select"));
-      const walletSelect = selects.find((s) =>
-        Array.from(s.options).some((o) => o.value === "tasks" && o.textContent?.includes("Task Wallet"))
-      );
+      const walletSelect = selects.find((s) => Array.from(s.options).some((o) => o.value === "tasks" && o.textContent?.includes("Task Wallet")));
       if (!walletSelect) return;
-
       const bankInput = document.querySelector<HTMLInputElement>('input[placeholder="Bank name"]');
       const accountNameInput = document.querySelector<HTMLInputElement>('input[placeholder="Account name"]');
       const accountNumberInput = document.querySelector<HTMLInputElement>('input[placeholder="Account number"]');
       if (!bankInput || !accountNameInput || !accountNumberInput) return;
-
       await loadBanks().catch(() => undefined);
       if (!banks.length || disposed) return;
 
@@ -44,12 +40,9 @@ export default function WithdrawalAccountVerification() {
         bankSelect = document.createElement("select");
         bankSelect.setAttribute("data-viewcash-bank-selector", "true");
         bankSelect.className = bankInput.className + " w-full appearance-none";
-        bankSelect.innerHTML = `<option value="">Select your bank</option>` + banks.map((b) =>
-          `<option value="${b.code.replace(/"/g, "&quot;")}">${b.name.replace(/</g, "&lt;")}</option>`
-        ).join("");
+        bankSelect.innerHTML = `<option value="">Select your bank</option>` + banks.map((b) => `<option value="${b.code.replace(/"/g, "&quot;")}">${b.name.replace(/</g, "&lt;")}</option>`).join("");
         bankInput.parentElement?.insertBefore(bankSelect, bankInput);
         bankInput.style.display = "none";
-
         bankSelect.addEventListener("change", () => {
           const selected = banks.find((b) => b.code === bankSelect!.value);
           bankInput.value = selected?.name || "";
@@ -61,7 +54,7 @@ export default function WithdrawalAccountVerification() {
       }
 
       accountNameInput.readOnly = true;
-      accountNameInput.disabled = true;
+      accountNameInput.disabled = false;
       accountNameInput.placeholder = "Verified account name";
       accountNameInput.style.opacity = "0.8";
 
@@ -72,7 +65,6 @@ export default function WithdrawalAccountVerification() {
         status.className = "mt-1 text-xs";
         accountNameInput.parentElement?.appendChild(status);
       }
-
       const setStatus = (text: string, success: boolean) => {
         if (!status) return;
         status.textContent = text;
@@ -92,12 +84,7 @@ export default function WithdrawalAccountVerification() {
           setStatus("Verifying account details...", false);
           verifyTimer = setTimeout(async () => {
             try {
-              const r = await fetch("/api/verify-account", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ account_number: accountNumberInput!.value, bank_code: bankSelect!.value }),
-                cache: "no-store",
-              });
+              const r = await fetch("/api/verify-account", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ account_number: accountNumberInput!.value, bank_code: bankSelect!.value }), cache: "no-store" });
               const d = await r.json().catch(() => ({}));
               if (!r.ok || !d.account_name) throw new Error(d.error || "ACCOUNT_NOT_VERIFIED");
               accountNameInput!.value = d.account_name;
@@ -111,26 +98,17 @@ export default function WithdrawalAccountVerification() {
           }, 500);
         });
       }
-
       if (!bankSelect.value && bankInput.value) {
         const selected = banks.find((b) => b.name.toLowerCase() === bankInput.value.toLowerCase());
         if (selected) bankSelect.value = selected.code;
       }
-      if (!accountNumberInput.value || accountNumberInput.value.length !== 10) {
-        setStatus("Select a bank and enter your 10-digit account number.", false);
-      }
+      if (!accountNumberInput.value || accountNumberInput.value.length !== 10) setStatus("Select a bank and enter your 10-digit account number.", false);
     };
 
     observer = new MutationObserver(() => { void enhance(); });
     observer.observe(document.body, { childList: true, subtree: true });
     void enhance();
-
-    return () => {
-      disposed = true;
-      if (verifyTimer) clearTimeout(verifyTimer);
-      observer?.disconnect();
-    };
+    return () => { disposed = true; if (verifyTimer) clearTimeout(verifyTimer); observer?.disconnect(); };
   }, []);
-
   return null;
 }
