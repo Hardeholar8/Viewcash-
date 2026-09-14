@@ -27,11 +27,11 @@ function validateInitData(initData: string, botToken: string) {
 
 function supabaseError(prefix: string, error: { code?: string; message?: string; details?: string; hint?: string } | null) {
   const message = (error?.message || "NO_MESSAGE").replace(/[\r\n]+/g, " ");
-  if (/gateway timeout|timeout|timed out/i.test(message)) return `${prefix}:TEMPORARY_DATABASE_ERROR`;
+  if (/gateway timeout|bad gateway|service unavailable|timeout|timed out|502|503|504/i.test(message)) return `${prefix}:TEMPORARY_DATABASE_ERROR`;
   return `${prefix}:${error?.code || "NO_CODE"}:${message.slice(0, 140)}`;
 }
 
-const isTransient = (message: string) => /gateway timeout|timeout|timed out|fetch failed|network/i.test(message);
+const isTransient = (message: string) => /gateway timeout|bad gateway|service unavailable|timeout|timed out|fetch failed|network|502|503|504/i.test(message);
 
 async function lookupUser(supabase: ReturnType<typeof createClient>, telegramId: number) {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
