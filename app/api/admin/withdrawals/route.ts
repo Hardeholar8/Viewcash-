@@ -43,6 +43,18 @@ export async function PATCH(req: NextRequest) {
   const { data: withdrawal, error: lookupError } = await supabase.from("withdrawals").select("id,status,user_id,amount").eq("id", id).single();
   if (lookupError || !withdrawal) return NextResponse.json({ error: "WITHDRAWAL_NOT_FOUND" }, { status: 404 });
   if (withdrawal.status === "paid") return NextResponse.json({ error: "WITHDRAWAL_ALREADY_PAID" }, { status: 409 });
+
+  if (status === "rejected" && withdrawal.status === "pending") {
+    const { data: rejected, error } = await supabase.rpc("reject_withdrawal", { p_withdrawal_id: id, p_admin_note: adminNote });
+    if (error) return NextResponse.json({ error: "WITHDRAWAL_REJECTION_ERROR" }, { status: 500 });
+    if (!rejected?.ok) return NextResponse.json({ error: String(rejected?.error || "WITHDRAWAL_REJECTION_ERROR") }, { status: 409 });
+    const { data } = await supabase.from("withdrawals").select("id,user_id,amount,bank_name,account_name,account_number,status,admin_note,created_at,processed_at,users(telegram_id,username,first_name,last_name)").eq("id", id).single();
+    return NextResponse.json({ withdrawal: data });
+  }
+
+  if (status === "rejected" && withdrawal.status !== "pending") return NextResponse.json({ error: "WITHDRAWAL_NOT_PENDING" }, { status: 409 });
+  if (status === "cancelled" && withdrawal.status === "paid") return NextResponse.json({ error: "WITHDRAWAL_ALREADY_PAID" }, { status: 409 });
+
   const updates: Record<string, unknown> = { status, admin_note: adminNote, processed_at: new Date().toISOString() };
   const { data, error } = await supabase.from("withdrawals").update(updates).eq("id", id).select("id,user_id,amount,bank_name,account_name,account_number,status,admin_note,created_at,processed_at,users(telegram_id,username,first_name,last_name)").single();
   if (error) return NextResponse.json({ error: "WITHDRAWAL_UPDATE_ERROR" }, { status: 500 });
