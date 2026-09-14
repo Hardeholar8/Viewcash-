@@ -14,12 +14,12 @@ button { font: inherit; }
 .text-4xl { font-size: 1.8rem; line-height: 1.05; }
 .shadow-lg { box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16); }
 
-/* Temporary ViewCash notices disappear automatically after 4 seconds. */
+/* ViewCash notices auto-dismiss visually after 2.5 seconds. */
 @keyframes viewcash-notice-dismiss {
-  0%, 82% { opacity: 1; transform: translateY(0); max-height: 120px; margin-bottom: 1rem; }
+  0%, 72% { opacity: 1; transform: translateY(0); max-height: 120px; margin-bottom: 1rem; }
   100% { opacity: 0; transform: translateY(-4px); max-height: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; border-width: 0; overflow: hidden; }
 }
 
 div[class*="bg-cyan-400/5"][class*="border-cyan-400/20"][class*="rounded-xl"] {
-  animation: viewcash-notice-dismiss 4s ease forwards;
+  animation: viewcash-notice-dismiss 2.5s ease forwards;
 }
