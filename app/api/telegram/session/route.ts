@@ -26,7 +26,21 @@ function validateInitData(initData: string, botToken: string) {
 }
 
 function supabaseError(prefix: string, error: { code?: string; message?: string; details?: string; hint?: string } | null) {
-  return `${prefix}:${error?.code || "NO_CODE"}:${(error?.message || "NO_MESSAGE").replace(/[\r\n]+/g, " ").slice(0, 140)}`;
+  const message = (error?.message || "NO_MESSAGE").replace(/[\r\n]+/g, " ");
+  if (/gateway timeout|timeout|timed out/i.test(message)) return `${prefix}:TEMPORARY_DATABASE_ERROR`;
+  return `${prefix}:${error?.code || "NO_CODE"}:${message.slice(0, 140)}`;
+}
+
+async function lookupUser(supabase: ReturnType<typeof createClient>, telegramId: number) {
+  let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,activated").eq("telegram_id", telegramId).maybeSingle();
+    if (!result.error) return result.data;
+    lastError = result.error;
+    if (!/gateway timeout|timeout|timed out|fetch failed|network/i.test(result.error.message || "")) break;
+    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)));
+  }
+  throw new Error(supabaseError("SUPABASE_USER_LOOKUP_ERROR", lastError));
 }
 
 export async function POST(req: NextRequest) {
@@ -39,8 +53,7 @@ export async function POST(req: NextRequest) {
     const supabase = createClient(VIEWCASH_SUPABASE_URL, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const referralCode = `VC${telegramUser.id.toString(36).toUpperCase()}`;
 
-    const { data: existing, error: lookupError } = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,activated").eq("telegram_id", telegramUser.id).maybeSingle();
-    if (lookupError) throw new Error(supabaseError("SUPABASE_USER_LOOKUP_ERROR", lookupError));
+    const existing = await lookupUser(supabase, telegramUser.id);
 
     let user = existing;
     let isNew = false;
@@ -79,6 +92,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, activated: Boolean(user.activated), referral_code: user.referral_code, referral_link: referralLink, coins: Number(wallet.coins ?? 0), referral_coins: Number(wallet.referral_coins ?? 0), total_coins_earned: Number(wallet.total_coins_earned ?? 0), total_coins_withdrawn: Number(wallet.total_coins_withdrawn ?? 0), balance: Number(wallet.coins ?? 0), referral_balance: Number(wallet.referral_coins ?? 0), new_user: isNew });
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR" }, { status: 401 });
+    const message = error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR";
+    const safeMessage = message === "SUPABASE_USER_LOOKUP_ERROR:TEMPORARY_DATABASE_ERROR" ? "Temporary connection problem. Please try again." : message;
+    return NextResponse.json({ error: safeMessage }, { status: 401 });
   }
 }
