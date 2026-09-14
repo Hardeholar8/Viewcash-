@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 const VIEWCASH_SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
+const BOT_USERNAME = "Viewcashe_bot";
 
 function validateInitData(initData: string, botToken: string) {
   if (!initData) throw new Error("TELEGRAM_INIT_DATA_MISSING");
@@ -74,7 +75,8 @@ export async function POST(req: NextRequest) {
     const { data: wallet, error: walletError } = await supabase.from("wallets").select("coins,referral_coins,total_coins_earned,total_coins_withdrawn,balance,referral_balance,total_earned,total_withdrawn").eq("user_id", user.id).single();
     if (walletError) throw new Error(supabaseError("SUPABASE_WALLET_LOOKUP_ERROR", walletError));
     const displayName = user.username ? `@${user.username}` : user.first_name || "Telegram User";
-    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, activated: Boolean(user.activated), coins: Number(wallet.coins ?? 0), referral_coins: Number(wallet.referral_coins ?? 0), total_coins_earned: Number(wallet.total_coins_earned ?? 0), total_coins_withdrawn: Number(wallet.total_coins_withdrawn ?? 0), balance: Number(wallet.coins ?? 0), referral_balance: Number(wallet.referral_coins ?? 0), new_user: isNew });
+    const referralLink = `https://t.me/${BOT_USERNAME}?startapp=${encodeURIComponent(user.referral_code)}`;
+    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, activated: Boolean(user.activated), referral_code: user.referral_code, referral_link: referralLink, coins: Number(wallet.coins ?? 0), referral_coins: Number(wallet.referral_coins ?? 0), total_coins_earned: Number(wallet.total_coins_earned ?? 0), total_coins_withdrawn: Number(wallet.total_coins_withdrawn ?? 0), balance: Number(wallet.coins ?? 0), referral_balance: Number(wallet.referral_coins ?? 0), new_user: isNew });
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR" }, { status: 401 });
