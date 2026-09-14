@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
 const MONETAG_ZONE_ID = "11801942";
+const SESSION_TTL_MS = 15 * 60 * 1000;
 const BOT_TOKEN = () => (process.env.TELEGRAM_BOT_TOKEN || "").trim();
 
 function getTelegramUser(initData: string) {
@@ -44,12 +45,20 @@ export async function POST(req: NextRequest) {
     if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ACTIVE" }, { status: 403 });
     if (!user.activated) return NextResponse.json({ error: "ACCOUNT_ACTIVATION_REQUIRED" }, { status: 403 });
 
-    // Generate both identifiers on the server and store them with the exact ad session.
-    const requestVar = `watch_ads_${Date.now()}_${crypto.randomBytes(12).toString("hex")}`;
+    const now = Date.now();
+    await db.from("ad_sessions")
+      .update({ status: "expired", completed_at: new Date(now).toISOString() })
+      .eq("user_id", user.id)
+      .eq("provider", "monetag")
+      .eq("status", "started")
+      .lt("started_at", new Date(now - SESSION_TTL_MS).toISOString());
+
+    const requestVar = `watch_ads_${now}_${crypto.randomBytes(12).toString("hex")}`;
     const ymid = `vc_${crypto.randomBytes(16).toString("hex")}`;
     const { error } = await db.from("ad_sessions").insert({
       user_id: user.id,
       provider: "monetag",
+      zone_id: MONETAG_ZONE_ID,
       request_var: requestVar,
       ymid,
       status: "started",

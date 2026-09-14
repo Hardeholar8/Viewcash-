@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
 const MONETAG_ZONE_ID = "11801942";
+const SESSION_TTL_MINUTES = 15;
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,9 +19,6 @@ export async function GET(req: NextRequest) {
     const zoneId = String(q.get("zone_id") || "").trim();
     const estimatedPrice = Number(q.get("estimated_price") || 0);
 
-    // Monetag's postback screen does not provide a custom token field.
-    // Authenticate the callback by matching the high-entropy ymid + request_var
-    // that ViewCash generated and stored before the ad was shown.
     if (!requestVar || !ymid) return new NextResponse("ignored", { status: 200 });
     if (zoneId && zoneId !== MONETAG_ZONE_ID) return new NextResponse("ignored", { status: 200 });
     if (eventType !== "impression" || rewardEventType !== "valued") return new NextResponse("ignored", { status: 200 });
@@ -28,7 +26,7 @@ export async function GET(req: NextRequest) {
     const db = createClient(SUPABASE_URL, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const { data: session, error: sessionError } = await db
       .from("ad_sessions")
-      .select("id,user_id,status,ymid,request_var")
+      .select("id,user_id,status,ymid,request_var,zone_id,started_at")
       .eq("request_var", requestVar)
       .eq("ymid", ymid)
       .eq("provider", "monetag")
@@ -37,6 +35,13 @@ export async function GET(req: NextRequest) {
     if (!session) return new NextResponse("ignored", { status: 200 });
     if (session.status === "completed") return new NextResponse("already_processed", { status: 200 });
     if (session.status !== "started") return new NextResponse("ignored", { status: 200 });
+    if (session.zone_id && session.zone_id !== MONETAG_ZONE_ID) return new NextResponse("ignored", { status: 200 });
+
+    const startedAt = new Date(session.started_at).getTime();
+    if (!Number.isFinite(startedAt) || Date.now() - startedAt > SESSION_TTL_MINUTES * 60 * 1000) {
+      await db.from("ad_sessions").update({ status: "expired", completed_at: new Date().toISOString() }).eq("id", session.id).eq("status", "started");
+      return new NextResponse("expired", { status: 200 });
+    }
 
     const { data: user, error: userError } = await db
       .from("users")
