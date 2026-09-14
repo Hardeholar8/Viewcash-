@@ -3,6 +3,8 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { checkTaskFraud } from "@/lib/fraud";
 
+const VIEWCASH_SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
+
 function validateInitData(initData: string, botToken: string) {
   const params = new URLSearchParams(initData || "");
   const hash = params.get("hash");
@@ -20,10 +22,9 @@ function validateInitData(initData: string, botToken: string) {
 }
 
 function db() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("SERVER_CONFIG_ERROR");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  if (!key) throw new Error("SERVER_CONFIG_ERROR");
+  return createClient(VIEWCASH_SUPABASE_URL, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
 async function telegramMember(chat: string, userId: number, token: string) {
@@ -33,13 +34,23 @@ async function telegramMember(chat: string, userId: number, token: string) {
   return ["creator", "administrator", "member"].includes(data.result?.status);
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const initData = String(req.nextUrl.searchParams.get("initData") || "");
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) throw new Error("SERVER_CONFIG_ERROR");
+    const tgUser = validateInitData(initData, token);
     const supabase = db();
+    const { data: user } = await supabase.from("users").select("id,activated,status").eq("telegram_id", tgUser.id).single();
+    if (!user) return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
+    if (!user.activated) return NextResponse.json({ error: "ACCOUNT_ACTIVATION_REQUIRED", activated: false, tasks: [] }, { status: 403 });
+    if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ACTIVE" }, { status: 403 });
     const { data, error } = await supabase.from("tasks").select("id,title,description,reward,task_type,action_url,daily_limit,completion_limit,completed_count,proof_required,verification_type,telegram_chat").eq("status","active").order("created_at", { ascending: false });
     if (error) throw error;
-    return NextResponse.json({ tasks: data || [] });
-  } catch { return NextResponse.json({ error: "TASKS_UNAVAILABLE" }, { status: 500 }); }
+    return NextResponse.json({ tasks: data || [], activated: true });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "TASKS_UNAVAILABLE" }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -52,13 +63,12 @@ export async function POST(req: NextRequest) {
     if (!token) throw new Error("SERVER_CONFIG_ERROR");
     const tgUser = validateInitData(initData, token);
     const supabase = db();
-    const { data: user, error: userError } = await supabase.from("users").select("id,telegram_id,status").eq("telegram_id", tgUser.id).single();
+    const { data: user, error: userError } = await supabase.from("users").select("id,telegram_id,status,activated").eq("telegram_id", tgUser.id).single();
     if (userError || !user) return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
+    if (!user.activated) return NextResponse.json({ error: "ACCOUNT_ACTIVATION_REQUIRED" }, { status: 403 });
     if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ACTIVE" }, { status: 403 });
-
     const fraud = await checkTaskFraud(user.id);
     if (!fraud.allowed) return NextResponse.json({ error: fraud.error }, { status: 429 });
-
     const { data: task, error: taskError } = await supabase.from("tasks").select("id,title,task_type,verification_type,telegram_chat,action_url,proof_required").eq("id", taskId).single();
     if (taskError || !task) return NextResponse.json({ error: "TASK_NOT_FOUND" }, { status: 404 });
     if (task.verification_type === "telegram" || task.task_type === "telegram") {
