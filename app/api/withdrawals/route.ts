@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { checkWithdrawalFraud } from "@/lib/fraud";
 
 function validateTelegram(initData: string, botToken: string) {
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
   if (!hash) return null;
   params.delete("hash");
-  const dataCheckString = [...params.entries()]
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("\n");
+  const dataCheckString = [...params.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, value]) => `${key}=${value}`).join("\n");
   const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken.trim()).digest();
   const calculated = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
   if (hash.length !== calculated.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(calculated))) return null;
@@ -42,28 +40,23 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
     if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ACTIVE" }, { status: 403 });
 
-    const { data: setting } = await supabase.from("settings").select("value").eq("key", "minimum_withdrawal").maybeSingle();
-    const minimum = Number(setting?.value ?? 1000);
-    if (!Number.isFinite(minimum)) return NextResponse.json({ error: "WITHDRAWAL_SETTINGS_ERROR" }, { status: 500 });
-    if (amount < minimum) return NextResponse.json({ error: `MINIMUM_WITHDRAWAL:${minimum}` }, { status: 400 });
+    const fraud = await checkWithdrawalFraud(user.id);
+    if (!fraud.allowed) return NextResponse.json({ error: fraud.error }, { status: 429 });
 
-    const { data: wallet, error: walletError } = await supabase.from("wallets").select("balance").eq("user_id", user.id).maybeSingle();
-    if (walletError) return NextResponse.json({ error: "WALLET_LOOKUP_ERROR" }, { status: 500 });
-    if (!wallet || Number(wallet.balance) < amount) return NextResponse.json({ error: "INSUFFICIENT_BALANCE" }, { status: 400 });
-
-    const { data: existing } = await supabase.from("withdrawals").select("id").eq("user_id", user.id).in("status", ["pending", "approved"]).limit(1);
-    if (existing?.length) return NextResponse.json({ error: "WITHDRAWAL_ALREADY_PENDING" }, { status: 400 });
-
-    const { data: withdrawal, error: withdrawalError } = await supabase.from("withdrawals").insert({
-      user_id: user.id,
-      amount,
-      bank_name: bankName,
-      account_name: accountName,
-      account_number: accountNumber,
-      status: "pending"
-    }).select("id,amount,bank_name,account_name,account_number,status,created_at").single();
-    if (withdrawalError) return NextResponse.json({ error: "WITHDRAWAL_CREATE_ERROR" }, { status: 500 });
-    return NextResponse.json({ ok: true, withdrawal });
+    const { data, error } = await supabase.rpc("submit_withdrawal", {
+      p_user_id: user.id,
+      p_amount: amount,
+      p_bank_name: bankName,
+      p_account_name: accountName,
+      p_account_number: accountNumber,
+    });
+    if (error) return NextResponse.json({ error: error.message === "INSUFFICIENT_BALANCE" ? "INSUFFICIENT_BALANCE" : "WITHDRAWAL_REQUEST_ERROR" }, { status: 400 });
+    if (!data?.ok) {
+      const code = String(data?.error || "WITHDRAWAL_REQUEST_ERROR");
+      const status = code === "WITHDRAWAL_ALREADY_PENDING" ? 409 : code === "INSUFFICIENT_BALANCE" ? 400 : 400;
+      return NextResponse.json({ error: code }, { status });
+    }
+    return NextResponse.json(data);
   } catch {
     return NextResponse.json({ error: "WITHDRAWAL_REQUEST_ERROR" }, { status: 500 });
   }
