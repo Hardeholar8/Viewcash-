@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const { initData, email } = await req.json();
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const flutterwaveSecret = process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || process.env.SECRET_KEY;
+    const flutterwaveSecret = (process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || process.env.SECRET_KEY || "").trim();
     if (!token || !key) throw new Error("SERVER_CONFIG_ERROR");
     if (!flutterwaveSecret) throw new Error("FLUTTERWAVE_NOT_CONFIGURED");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim())) return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
