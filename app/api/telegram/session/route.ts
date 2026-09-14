@@ -4,6 +4,11 @@ import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
+// ViewCash uses one dedicated Supabase project. Keep the server-side URL fixed so
+// an accidentally changed NEXT_PUBLIC_SUPABASE_URL cannot send API calls to the
+// Vercel site (which returns HTML instead of PostgREST JSON).
+const VIEWCASH_SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
+
 function validateInitData(initData: string, botToken: string) {
   if (!initData) throw new Error("TELEGRAM_INIT_DATA_MISSING");
   const params = new URLSearchParams(initData);
@@ -43,12 +48,11 @@ export async function POST(req: NextRequest) {
   try {
     const { initData } = await req.json();
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!botToken || !url || !serviceRoleKey) throw new Error("VIEWCASH_SERVER_CONFIG_ERROR");
+    if (!botToken || !serviceRoleKey) throw new Error("VIEWCASH_SERVER_CONFIG_ERROR");
 
     const telegramUser = validateInitData(String(initData || ""), botToken);
-    const supabase = createClient(url, serviceRoleKey, {
+    const supabase = createClient(VIEWCASH_SUPABASE_URL, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const referralCode = `VC${telegramUser.id.toString(36).toUpperCase()}`;
