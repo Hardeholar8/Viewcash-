@@ -24,7 +24,7 @@ function db(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const supabase = db(req);
   if (!supabase) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
-  const { data, error } = await supabase.from("tasks").select("id,title,description,reward,task_type,action_url,daily_limit,completion_limit,completed_count,status,created_at,updated_at").order("created_at", { ascending: false });
+  const { data, error } = await supabase.from("tasks").select("id,title,description,reward,task_type,action_url,daily_limit,completion_limit,completed_count,status,created_at,updated_at,proof_required,verification_type,telegram_chat").order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: "ADMIN_TASKS_ERROR" }, { status: 500 });
   return NextResponse.json({ tasks: data || [] });
 }
@@ -41,8 +41,9 @@ export async function POST(req: NextRequest) {
   const dailyLimit = body?.daily_limit === "" || body?.daily_limit == null ? null : Number(body.daily_limit);
   const completionLimit = body?.completion_limit === "" || body?.completion_limit == null ? null : Number(body.completion_limit);
   const status = body?.status === "inactive" ? "inactive" : "active";
+  const isTelegram = taskType === "telegram";
   if (!title || !Number.isFinite(reward) || reward < 0 || (dailyLimit !== null && (!Number.isInteger(dailyLimit) || dailyLimit < 1)) || (completionLimit !== null && (!Number.isInteger(completionLimit) || completionLimit < 1))) return NextResponse.json({ error: "INVALID_TASK" }, { status: 400 });
-  const { data, error } = await supabase.from("tasks").insert({ title, description, reward, task_type: taskType, action_url: actionUrl, daily_limit: dailyLimit, completion_limit: completionLimit, status }).select().single();
+  const { data, error } = await supabase.from("tasks").insert({ title, description, reward, task_type: taskType, action_url: actionUrl, daily_limit: dailyLimit, completion_limit: completionLimit, status, verification_type: isTelegram ? "telegram" : "manual", proof_required: !isTelegram, telegram_chat: isTelegram ? actionUrl : null }).select().single();
   if (error) return NextResponse.json({ error: "ADMIN_TASK_CREATE_ERROR" }, { status: 500 });
   return NextResponse.json({ task: data });
 }
@@ -56,6 +57,8 @@ export async function PATCH(req: NextRequest) {
   const updates: Record<string, unknown> = {};
   for (const key of ["title", "description", "task_type", "action_url", "status"]) if (body?.[key] !== undefined) updates[key] = body[key] === null ? null : String(body[key]).trim();
   for (const key of ["reward", "daily_limit", "completion_limit"]) if (body?.[key] !== undefined) updates[key] = body[key] === null || body[key] === "" ? null : Number(body[key]);
+  if (updates.task_type === "telegram") { updates.verification_type = "telegram"; updates.proof_required = false; updates.telegram_chat = updates.action_url || null; }
+  if (updates.task_type !== undefined && updates.task_type !== "telegram") { updates.verification_type = "manual"; updates.proof_required = true; updates.telegram_chat = null; }
   if (updates.title !== undefined && !updates.title) return NextResponse.json({ error: "INVALID_TASK" }, { status: 400 });
   if (updates.reward !== undefined && (updates.reward === null || !Number.isFinite(Number(updates.reward)) || Number(updates.reward) < 0)) return NextResponse.json({ error: "INVALID_TASK" }, { status: 400 });
   for (const key of ["daily_limit", "completion_limit"]) if (updates[key] !== undefined && updates[key] !== null && (!Number.isInteger(Number(updates[key])) || Number(updates[key]) < 1)) return NextResponse.json({ error: "INVALID_TASK" }, { status: 400 });
