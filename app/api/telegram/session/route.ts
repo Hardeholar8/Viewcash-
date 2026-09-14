@@ -3,11 +3,11 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 function validateInitData(initData: string, botToken: string) {
-  if (!initData) throw new Error("Telegram initData is empty");
+  if (!initData) throw new Error("TELEGRAM_INIT_DATA_MISSING");
 
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
-  if (!hash) throw new Error("Telegram initData has no hash");
+  if (!hash) throw new Error("TELEGRAM_HASH_MISSING");
 
   params.delete("hash");
 
@@ -29,17 +29,17 @@ function validateInitData(initData: string, botToken: string) {
     calculated.length !== hash.length ||
     !crypto.timingSafeEqual(Buffer.from(calculated), Buffer.from(hash))
   ) {
-    throw new Error("Telegram initData hash is invalid");
+    throw new Error("TELEGRAM_HASH_INVALID");
   }
 
   const authDate = Number(params.get("auth_date"));
-  if (!authDate) throw new Error("Telegram initData has no auth_date");
+  if (!authDate) throw new Error("TELEGRAM_AUTH_DATE_MISSING");
   if (Date.now() / 1000 - authDate > 86400) {
-    throw new Error("Telegram initData has expired");
+    throw new Error("TELEGRAM_INIT_DATA_EXPIRED");
   }
 
   const userRaw = params.get("user");
-  if (!userRaw) throw new Error("Telegram initData has no user");
+  if (!userRaw) throw new Error("TELEGRAM_USER_MISSING");
 
   try {
     return JSON.parse(userRaw) as {
@@ -49,7 +49,7 @@ function validateInitData(initData: string, botToken: string) {
       last_name?: string;
     };
   } catch {
-    throw new Error("Telegram user data is invalid");
+    throw new Error("TELEGRAM_USER_INVALID");
   }
 }
 
@@ -61,6 +61,20 @@ async function getConfiguredBot(token: string) {
   const result = await response.json();
   if (!result.ok) return null;
   return result.result as { id: number; username?: string; first_name?: string };
+}
+
+function publicError(error: unknown) {
+  if (!(error instanceof Error)) return "VIEWCASH_CONNECTION_ERROR";
+  const message = error.message;
+
+  if (message.startsWith("TELEGRAM_")) return message;
+  if (message === "ViewCash server is not fully configured") return "SERVER_CONFIG_ERROR";
+  if (message.startsWith("SUPABASE_USER_LOOKUP:")) return "SUPABASE_USER_LOOKUP_ERROR";
+  if (message.startsWith("SUPABASE_USER_CREATE:")) return "SUPABASE_USER_CREATE_ERROR";
+  if (message.startsWith("SUPABASE_USER_UPDATE:")) return "SUPABASE_USER_UPDATE_ERROR";
+  if (message.startsWith("SUPABASE_WALLET_CREATE:")) return "SUPABASE_WALLET_CREATE_ERROR";
+  if (message.startsWith("SUPABASE_WALLET_LOOKUP:")) return "SUPABASE_WALLET_LOOKUP_ERROR";
+  return "VIEWCASH_CONNECTION_ERROR";
 }
 
 export async function POST(req: NextRequest) {
@@ -78,11 +92,11 @@ export async function POST(req: NextRequest) {
     try {
       telegramUser = validateInitData(String(initData || ""), botToken);
     } catch (error) {
-      if (error instanceof Error && error.message === "Telegram initData hash is invalid") {
+      if (error instanceof Error && error.message === "TELEGRAM_HASH_INVALID") {
         const bot = await getConfiguredBot(botToken);
         const botLabel = bot?.username ? `@${bot.username}` : bot?.first_name || "unknown bot";
         throw new Error(
-          `Telegram validation mismatch. Vercel token belongs to ${botLabel} (ID ${bot?.id ?? "unknown"}), but the Mini App data hash does not match this token. This confirms the deployed server token and Telegram-generated initData are not using the same bot credentials.`,
+          `TELEGRAM_HASH_INVALID_${botLabel}_${bot?.id ?? "unknown"}`,
         );
       }
       throw error;
@@ -100,7 +114,7 @@ export async function POST(req: NextRequest) {
       .eq("telegram_id", telegramUser.id)
       .maybeSingle();
 
-    if (existingError) throw existingError;
+    if (existingError) throw new Error(`SUPABASE_USER_LOOKUP:${existingError.message}`);
 
     let user = existing;
 
@@ -117,14 +131,14 @@ export async function POST(req: NextRequest) {
         .select("id,telegram_id,username,first_name,last_name,referral_code")
         .single();
 
-      if (error) throw error;
+      if (error) throw new Error(`SUPABASE_USER_CREATE:${error.message}`);
       user = data;
 
       const { error: walletError } = await supabase
         .from("wallets")
         .insert({ user_id: user.id });
 
-      if (walletError) throw walletError;
+      if (walletError) throw new Error(`SUPABASE_WALLET_CREATE:${walletError.message}`);
     } else {
       const { data, error } = await supabase
         .from("users")
@@ -137,7 +151,7 @@ export async function POST(req: NextRequest) {
         .select("id,telegram_id,username,first_name,last_name,referral_code")
         .single();
 
-      if (error) throw error;
+      if (error) throw new Error(`SUPABASE_USER_UPDATE:${error.message}`);
       user = data;
     }
 
@@ -147,7 +161,7 @@ export async function POST(req: NextRequest) {
       .eq("user_id", user.id)
       .single();
 
-    if (walletError) throw walletError;
+    if (walletError) throw new Error(`SUPABASE_WALLET_LOOKUP:${walletError.message}`);
 
     const displayName = user.username
       ? `@${user.username}`
@@ -166,12 +180,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to connect ViewCash account",
-      },
+      { error: publicError(error) },
       { status: 401 },
     );
   }
