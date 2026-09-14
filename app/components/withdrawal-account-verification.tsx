@@ -98,6 +98,43 @@ export default function WithdrawalAccountVerification() {
           }, 500);
         });
       }
+
+      const submitButton = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.trim() === "Submit withdrawal");
+      if (submitButton && submitButton.getAttribute("data-viewcash-withdraw-bound") !== "true") {
+        submitButton.setAttribute("data-viewcash-withdraw-bound", "true");
+        submitButton.type = "button";
+        submitButton.addEventListener("click", () => {
+          const amountInput = document.querySelector<HTMLInputElement>('input[placeholder*="coins to withdraw"]');
+          const amount = Number(amountInput?.value || 0);
+          const walletText = walletSelect?.value === "affiliate" ? "Affiliate" : "Task";
+          const walletCards = Array.from(document.querySelectorAll("p")).filter((p) => p.textContent?.includes("🪙"));
+          const selectedCard = walletCards.find((p) => p.parentElement?.parentElement?.textContent?.includes(`${walletText} Wallet`));
+          const available = selectedCard ? Number((selectedCard.textContent || "").replace(/[^0-9.]/g, "")) : NaN;
+
+          if (!bankSelect?.value) {
+            setStatus("Select your bank before submitting.", false);
+            return;
+          }
+          if (!/^\d{10}$/.test(accountNumberInput.value)) {
+            setStatus("Enter a valid 10-digit account number.", false);
+            return;
+          }
+          if (!accountNameInput.value.trim()) {
+            setStatus("Verify your account details before submitting.", false);
+            return;
+          }
+          if (!Number.isInteger(amount) || amount <= 0) {
+            setStatus("Enter a valid coin amount.", false);
+            return;
+          }
+          if (Number.isFinite(available) && amount > available) {
+            setStatus(`Insufficient ${walletText.toLowerCase()} wallet coins.`, false);
+            return;
+          }
+          setStatus("Submitting withdrawal request...", false);
+        }, true);
+      }
+
       if (!bankSelect.value && bankInput.value) {
         const selected = banks.find((b) => b.name.toLowerCase() === bankInput.value.toLowerCase());
         if (selected) bankSelect.value = selected.code;
