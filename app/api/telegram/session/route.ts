@@ -27,11 +27,11 @@ function validateInitData(initData: string, botToken: string) {
 
 function supabaseError(prefix: string, error: { code?: string; message?: string; details?: string; hint?: string } | null) {
   const message = (error?.message || "NO_MESSAGE").replace(/[\r\n]+/g, " ");
-  if (/gateway timeout|bad gateway|service unavailable|timeout|timed out|502|503|504/i.test(message)) return `${prefix}:TEMPORARY_DATABASE_ERROR`;
+  if (/gateway timeout|bad gateway|service unavailable|failed to get project config|timeout|timed out|fetch failed|network|502|503|504/i.test(message)) return `${prefix}:TEMPORARY_DATABASE_ERROR`;
   return `${prefix}:${error?.code || "NO_CODE"}:${message.slice(0, 140)}`;
 }
 
-const isTransient = (message: string) => /gateway timeout|bad gateway|service unavailable|timeout|timed out|fetch failed|network|502|503|504/i.test(message);
+const isTransient = (message: string) => /gateway timeout|bad gateway|service unavailable|failed to get project config|timeout|timed out|fetch failed|network|502|503|504/i.test(message);
 
 async function lookupUser(supabase: ReturnType<typeof createClient>, telegramId: number) {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
@@ -93,10 +93,6 @@ export async function POST(req: NextRequest) {
       if (referredBy) {
         await supabase.from("referrals").insert({ referrer_id: referredBy, referred_user_id: user.id, reward_amount: 0, status: "pending" });
       }
-    } else {
-      const { data, error } = await supabase.from("users").update({ username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null }).eq("id", user.id).select("id,telegram_id,username,first_name,last_name,referral_code,activated").single();
-      if (error) throw new Error(supabaseError("SUPABASE_USER_UPDATE_ERROR", error));
-      user = data;
     }
 
     const wallet = await lookupWallet(supabase, user.id);
@@ -106,7 +102,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
     const message = error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR";
-    const safeMessage = message === "SUPABASE_USER_LOOKUP_ERROR:TEMPORARY_DATABASE_ERROR" || message === "SUPABASE_WALLET_LOOKUP_ERROR:TEMPORARY_DATABASE_ERROR" ? "Temporary connection problem. Please try again." : message;
+    const safeMessage = message.includes(":TEMPORARY_DATABASE_ERROR") ? "Temporary connection problem. Please try again." : message;
     return NextResponse.json({ error: safeMessage }, { status: 401 });
   }
 }
