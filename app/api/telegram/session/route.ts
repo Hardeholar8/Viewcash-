@@ -31,16 +31,30 @@ function supabaseError(prefix: string, error: { code?: string; message?: string;
   return `${prefix}:${error?.code || "NO_CODE"}:${message.slice(0, 140)}`;
 }
 
+const isTransient = (message: string) => /gateway timeout|timeout|timed out|fetch failed|network/i.test(message);
+
 async function lookupUser(supabase: ReturnType<typeof createClient>, telegramId: number) {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,activated").eq("telegram_id", telegramId).maybeSingle();
     if (!result.error) return result.data;
     lastError = result.error;
-    if (!/gateway timeout|timeout|timed out|fetch failed|network/i.test(result.error.message || "")) break;
+    if (!isTransient(result.error.message || "")) break;
     if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)));
   }
   throw new Error(supabaseError("SUPABASE_USER_LOOKUP_ERROR", lastError));
+}
+
+async function lookupWallet(supabase: ReturnType<typeof createClient>, userId: string) {
+  let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await supabase.from("wallets").select("coins,referral_coins,total_coins_earned,total_coins_withdrawn,balance,referral_balance,total_earned,total_withdrawn").eq("user_id", userId).maybeSingle();
+    if (!result.error && result.data) return result.data;
+    lastError = result.error || { code: "WALLET_NOT_FOUND", message: "Wallet not found" };
+    if (!result.error || !isTransient(result.error.message || "")) break;
+    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)));
+  }
+  throw new Error(supabaseError("SUPABASE_WALLET_LOOKUP_ERROR", lastError));
 }
 
 export async function POST(req: NextRequest) {
@@ -85,15 +99,14 @@ export async function POST(req: NextRequest) {
       user = data;
     }
 
-    const { data: wallet, error: walletError } = await supabase.from("wallets").select("coins,referral_coins,total_coins_earned,total_coins_withdrawn,balance,referral_balance,total_earned,total_withdrawn").eq("user_id", user.id).single();
-    if (walletError) throw new Error(supabaseError("SUPABASE_WALLET_LOOKUP_ERROR", walletError));
+    const wallet = await lookupWallet(supabase, user.id);
     const displayName = user.username ? `@${user.username}` : user.first_name || "Telegram User";
     const referralLink = `https://t.me/${BOT_USERNAME}?startapp=${encodeURIComponent(user.referral_code)}`;
     return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, activated: Boolean(user.activated), referral_code: user.referral_code, referral_link: referralLink, coins: Number(wallet.coins ?? 0), referral_coins: Number(wallet.referral_coins ?? 0), total_coins_earned: Number(wallet.total_coins_earned ?? 0), total_coins_withdrawn: Number(wallet.total_coins_withdrawn ?? 0), balance: Number(wallet.coins ?? 0), referral_balance: Number(wallet.referral_coins ?? 0), new_user: isNew });
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
     const message = error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR";
-    const safeMessage = message === "SUPABASE_USER_LOOKUP_ERROR:TEMPORARY_DATABASE_ERROR" ? "Temporary connection problem. Please try again." : message;
+    const safeMessage = message === "SUPABASE_USER_LOOKUP_ERROR:TEMPORARY_DATABASE_ERROR" || message === "SUPABASE_WALLET_LOOKUP_ERROR:TEMPORARY_DATABASE_ERROR" ? "Temporary connection problem. Please try again." : message;
     return NextResponse.json({ error: safeMessage }, { status: 401 });
   }
 }
