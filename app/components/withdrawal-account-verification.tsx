@@ -25,18 +25,20 @@ export default function WithdrawalAccountVerification() {
 
     const enhance = async () => {
       if (disposed || window.location.pathname !== "/") return;
-      const selects = Array.from(document.querySelectorAll("select"));
-      const walletSelect = selects.find((s) => Array.from(s.options).some((o) => o.value === "tasks" && o.textContent?.includes("Task Wallet")));
-      if (!walletSelect) return;
+
       const bankInput = document.querySelector<HTMLInputElement>('input[placeholder="Bank name"]');
-      const accountNameInput = document.querySelector<HTMLInputElement>('input[placeholder="Account name"]');
+      const accountNameInput = document.querySelector<HTMLInputElement>('input[placeholder="Account name"], input[placeholder="Verified account name"]');
       const accountNumberInput = document.querySelector<HTMLInputElement>('input[placeholder="Account number"]');
       if (!bankInput || !accountNameInput || !accountNumberInput) return;
+
       await loadBanks().catch(() => undefined);
       if (!banks.length || disposed) return;
 
       let bankSearch = document.querySelector<HTMLInputElement>('input[data-viewcash-bank-search="true"]');
       let bankList = document.querySelector<HTMLDivElement>('[data-viewcash-bank-list="true"]');
+
+      // Remove any old dropdown selector injected by an earlier version.
+      document.querySelectorAll('select[data-viewcash-bank-selector="true"]').forEach((el) => el.remove());
 
       if (!bankSearch) {
         bankSearch = document.createElement("input");
@@ -44,6 +46,7 @@ export default function WithdrawalAccountVerification() {
         bankSearch.setAttribute("data-viewcash-bank-search", "true");
         bankSearch.className = bankInput.className + " w-full";
         bankSearch.placeholder = "Search bank...";
+        bankSearch.autocomplete = "off";
         bankInput.parentElement?.insertBefore(bankSearch, bankInput);
         bankInput.style.display = "none";
 
@@ -57,6 +60,8 @@ export default function WithdrawalAccountVerification() {
           const query = bankSearch.value.trim().toLowerCase();
           const matches = banks.filter((b) => b.name.toLowerCase().includes(query)).slice(0, 20);
           bankList.innerHTML = "";
+          bankList.style.display = "block";
+
           if (!matches.length) {
             const empty = document.createElement("div");
             empty.className = "px-3 py-2 text-xs text-slate-500";
@@ -64,6 +69,7 @@ export default function WithdrawalAccountVerification() {
             bankList.appendChild(empty);
             return;
           }
+
           matches.forEach((bank) => {
             const button = document.createElement("button");
             button.type = "button";
@@ -74,6 +80,7 @@ export default function WithdrawalAccountVerification() {
               bankInput!.value = bank.name;
               bankInput!.dispatchEvent(new Event("input", { bubbles: true }));
               bankList!.innerHTML = "";
+              bankList!.style.display = "none";
               accountNameInput!.value = "";
               accountNameInput!.dispatchEvent(new Event("input", { bubbles: true }));
               setStatus("Bank selected. Enter your 10-digit account number.", false);
@@ -99,6 +106,7 @@ export default function WithdrawalAccountVerification() {
         status.className = "mt-1 text-xs";
         accountNameInput.parentElement?.appendChild(status);
       }
+
       const setStatus = (text: string, success: boolean) => {
         if (!status) return;
         status.textContent = text;
@@ -111,16 +119,23 @@ export default function WithdrawalAccountVerification() {
           if (verifyTimer) clearTimeout(verifyTimer);
           accountNameInput!.value = "";
           accountNameInput!.dispatchEvent(new Event("input", { bubbles: true }));
+
           if (accountNumberInput!.value.length !== 10 || !bankInput!.value) {
             setStatus("Search and select a bank, then enter your 10-digit account number.", false);
             return;
           }
+
           setStatus("Verifying account details...", false);
           verifyTimer = setTimeout(async () => {
             try {
               const selectedBank = banks.find((b) => b.name.toLowerCase() === bankInput!.value.toLowerCase());
               if (!selectedBank) throw new Error("BANK_NOT_SELECTED");
-              const r = await fetch("/api/verify-account", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ account_number: accountNumberInput!.value, bank_code: selectedBank.code }), cache: "no-store" });
+              const r = await fetch("/api/verify-account", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ account_number: accountNumberInput!.value, bank_code: selectedBank.code }),
+                cache: "no-store",
+              });
               const d = await r.json().catch(() => ({}));
               if (!r.ok || !d.account_name) throw new Error(d.error || "ACCOUNT_NOT_VERIFIED");
               accountNameInput!.value = d.account_name;
@@ -140,13 +155,6 @@ export default function WithdrawalAccountVerification() {
         submitButton.setAttribute("data-viewcash-withdraw-bound", "true");
         submitButton.type = "button";
         submitButton.addEventListener("click", () => {
-          const amountInput = document.querySelector<HTMLInputElement>('input[placeholder*="coins to withdraw"]');
-          const amount = Number(amountInput?.value || 0);
-          const walletText = walletSelect?.value === "affiliate" ? "Affiliate" : "Task";
-          const walletCards = Array.from(document.querySelectorAll("p")).filter((p) => p.textContent?.includes("🪙"));
-          const selectedCard = walletCards.find((p) => p.parentElement?.parentElement?.textContent?.includes(`${walletText} Wallet`));
-          const available = selectedCard ? Number((selectedCard.textContent || "").replace(/[^0-9.]/g, "")) : NaN;
-
           if (!bankSearch?.value.trim()) {
             setStatus("Search for and select your bank before submitting.", false);
             bankSearch?.focus();
@@ -160,26 +168,26 @@ export default function WithdrawalAccountVerification() {
             setStatus("Verify your account details before submitting.", false);
             return;
           }
-          if (!Number.isInteger(amount) || amount <= 0) {
-            setStatus("Enter a valid coin amount.", false);
-            return;
-          }
-          if (Number.isFinite(available) && amount > available) {
-            setStatus(`Insufficient ${walletText.toLowerCase()} wallet coins.`, false);
-            return;
-          }
           setStatus("Submitting withdrawal request...", false);
         }, true);
       }
 
       if (!bankSearch.value && bankInput.value) bankSearch.value = bankInput.value;
-      if (!accountNumberInput.value || accountNumberInput.value.length !== 10) setStatus("Search and select a bank, then enter your 10-digit account number.", false);
+      if (!accountNumberInput.value || accountNumberInput.value.length !== 10) {
+        setStatus("Search and select a bank, then enter your 10-digit account number.", false);
+      }
     };
 
     observer = new MutationObserver(() => { void enhance(); });
     observer.observe(document.body, { childList: true, subtree: true });
     void enhance();
-    return () => { disposed = true; if (verifyTimer) clearTimeout(verifyTimer); observer?.disconnect(); };
+
+    return () => {
+      disposed = true;
+      if (verifyTimer) clearTimeout(verifyTimer);
+      observer?.disconnect();
+    };
   }, []);
+
   return null;
 }
