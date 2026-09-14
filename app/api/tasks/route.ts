@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { checkTaskFraud } from "@/lib/fraud";
 
 function validateInitData(initData: string, botToken: string) {
   const params = new URLSearchParams(initData || "");
@@ -29,8 +30,7 @@ async function telegramMember(chat: string, userId: number, token: string) {
   const response = await fetch(`https://api.telegram.org/bot${token}/getChatMember?chat_id=${encodeURIComponent(chat)}&user_id=${userId}`, { cache: "no-store" });
   const data = await response.json().catch(() => null);
   if (!response.ok || !data?.ok) throw new Error("TELEGRAM_VERIFY_FAILED");
-  const status = data.result?.status;
-  return ["creator", "administrator", "member"].includes(status);
+  return ["creator", "administrator", "member"].includes(data.result?.status);
 }
 
 export async function GET() {
@@ -52,11 +52,15 @@ export async function POST(req: NextRequest) {
     if (!token) throw new Error("SERVER_CONFIG_ERROR");
     const tgUser = validateInitData(initData, token);
     const supabase = db();
-    const { data: user, error: userError } = await supabase.from("users").select("id,telegram_id").eq("telegram_id", tgUser.id).single();
+    const { data: user, error: userError } = await supabase.from("users").select("id,telegram_id,status").eq("telegram_id", tgUser.id).single();
     if (userError || !user) return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
+    if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ACTIVE" }, { status: 403 });
+
+    const fraud = await checkTaskFraud(user.id);
+    if (!fraud.allowed) return NextResponse.json({ error: fraud.error }, { status: 429 });
+
     const { data: task, error: taskError } = await supabase.from("tasks").select("id,title,task_type,verification_type,telegram_chat,action_url,proof_required").eq("id", taskId).single();
     if (taskError || !task) return NextResponse.json({ error: "TASK_NOT_FOUND" }, { status: 404 });
-
     if (task.verification_type === "telegram" || task.task_type === "telegram") {
       const chat = task.telegram_chat || task.action_url;
       if (!chat) return NextResponse.json({ error: "TELEGRAM_TASK_NOT_CONFIGURED" }, { status: 400 });
