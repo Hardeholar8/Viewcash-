@@ -1,0 +1,1 @@
+Trigger deployment after restoring app/page.tsx.
