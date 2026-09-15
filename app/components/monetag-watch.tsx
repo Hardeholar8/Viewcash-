@@ -148,9 +148,6 @@ export default function MonetagWatch({ initData }: { initData: string }) {
         return;
       }
 
-      // The server independently checks the session age (15 seconds), active
-      // account and exact session identifiers before crediting. This removes
-      // the old dependency on Monetag's delayed valued-impression callback.
       const rewardCoins = await creditImmediately(completedSession);
       activeSessionRef.current = null;
       setMessage(rewardCoins > 0 ? `Reward added: ${rewardCoins} coins.` : "Ad completed. Reward already credited.");
