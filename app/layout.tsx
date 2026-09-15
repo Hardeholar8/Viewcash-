@@ -56,6 +56,26 @@ new MutationObserver(wire).observe(document.documentElement,{subtree:true,childL
 wire();
 })();`}
         </Script>
+        <Script id="viewcash-balance-sync" strategy="afterInteractive">
+          {`(function(){
+var lastCoins=null,lastRef=null,started=false,timer=null;
+var check=function(){
+ var tg=window.Telegram&&window.Telegram.WebApp, data=tg&&tg.initData;
+ if(!data)return;
+ fetch("/api/telegram/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({initData:data}),cache:"no-store"})
+ .then(function(r){return r.json().catch(function(){return {}})})
+ .then(function(d){
+   if(!d||d.activated===false)return;
+   var coins=Number(d.coins||0), ref=Number(d.referral_coins||0);
+   if(!started){lastCoins=coins;lastRef=ref;started=true;return;}
+   if(coins!==lastCoins||ref!==lastRef){lastCoins=coins;lastRef=ref;window.location.reload();}
+ }).catch(function(){});
+};
+var start=function(){if(timer)return;check();timer=window.setInterval(check,5000)};
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
+window.addEventListener("pageshow",check);
+})();`}
+        </Script>
         {children}
         <ViewCashBackNavigation />
         <CurrentPlanCard />
