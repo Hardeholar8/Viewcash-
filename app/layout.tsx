@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
 import ActivationLevelGate from "./components/activation-level-gate";
+import ViewCashBackNavigation from "./components/viewcash-back-navigation";
 
 export const metadata: Metadata = {
   title: "ViewCash",
@@ -17,6 +18,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           {`document.addEventListener("click",function(e){if(location.pathname!=="/admin")return;var t=e.target;var b=t&&t.closest?t.closest("button"):null;if(b&&b.textContent&&b.textContent.trim()==="Fraud / Risk"){e.preventDefault();location.assign("/admin/fraud");}},true);`}
         </Script>
         {children}
+        <ViewCashBackNavigation />
         <ActivationLevelGate />
       </body>
     </html>
