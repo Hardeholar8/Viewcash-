@@ -84,22 +84,22 @@ export default function MonetagWatch({ initData }: { initData: string }) {
     return () => window.removeEventListener("popstate", handleBack);
   }, [initData]);
 
-  const waitForConfirmation = async (requestVar: string, ymid: string) => {
-    for (let attempt = 0; attempt < 8; attempt++) {
-      await new Promise(resolve => window.setTimeout(resolve, attempt === 0 ? 1200 : 1000));
-      const r = await fetch("/api/ads/status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ initData, request_var: requestVar, ymid }),
-        cache: "no-store",
-      }).catch(() => null);
-      const d = await r?.json().catch(() => ({}));
-      if (r?.ok && d?.confirmed) {
-        window.location.reload();
-        return true;
+  // Confirmation is deliberately non-blocking. Monetag's server callback can
+  // arrive later; users should not have to wait before watching another ad.
+  const confirmInBackground = (requestVar: string, ymid: string) => {
+    void (async () => {
+      for (let attempt = 0; attempt < 12; attempt++) {
+        await new Promise(resolve => window.setTimeout(resolve, attempt === 0 ? 500 : 1000));
+        const r = await fetch("/api/ads/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ initData, request_var: requestVar, ymid }),
+          cache: "no-store",
+        }).catch(() => null);
+        const d = await r?.json().catch(() => ({}));
+        if (r?.ok && d?.confirmed) return;
       }
-    }
-    return false;
+    })();
   };
 
   const watch = async () => {
@@ -140,12 +140,11 @@ export default function MonetagWatch({ initData }: { initData: string }) {
       }
 
       activeSessionRef.current = null;
+      // The user has completed the required 15 seconds. Do not block the
+      // Watch Ad button while Monetag's postback confirmation is pending.
+      setMessage("Ad completed.");
       if (result?.reward_event_type === "valued") {
-        setMessage("Ad completed. Confirming your coins...");
-        const confirmed = await waitForConfirmation(session.request_var, session.ymid);
-        if (!confirmed) setMessage("Ad completed. The server is still waiting for the partner confirmation. Your coins will only be added after confirmation.");
-      } else {
-        setMessage("Ad completed, but it was not a paid event. No coins were added.");
+        confirmInBackground(session.request_var, session.ymid);
       }
     } catch (error) {
       await cancelActiveSession();
@@ -163,7 +162,7 @@ export default function MonetagWatch({ initData }: { initData: string }) {
   return (
     <div className="mt-3">
       <button onClick={watch} disabled={busy || !ready} className="w-full rounded-2xl bg-cyan-400 py-3.5 text-sm font-extrabold text-slate-950 shadow-[0_10px_30px_rgba(34,211,238,0.12)] disabled:opacity-50">
-        {busy ? "Confirming reward..." : !zone ? "Ads being configured" : !ready ? "Loading ad..." : "Watch Ad"}
+        {busy ? "Watching ad..." : !zone ? "Ads being configured" : !ready ? "Loading ad..." : "Watch Ad"}
       </button>
       {message && <p className="mt-3 rounded-2xl bg-white/[.03] px-3 py-2.5 text-xs leading-5 text-slate-400">{message}</p>}
     </div>
