@@ -1,7 +1,5 @@
 "use client";
 import { useEffect,useState } from "react";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 type Task={id:string;title:string;description:string|null;reward:number;task_type:string;action_url:string|null;verification_type:string;proof_required:boolean;completed_count:number};type Completion={id:string;task_id:string;status:"pending"|"approved"|"rejected";proof_url:string|null;created_at:string;reviewed_at:string|null;tasks:Task};type View="available"|"pending"|"rejected"|"history";
 async function imageToDataUrl(file:File){if(!file.type.startsWith("image/"))throw new Error("Please select a screenshot image.");const bitmap=await createImageBitmap(file),max=1400,scale=Math.min(1,max/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));const ctx=canvas.getContext("2d");if(!ctx)throw new Error("Unable to process screenshot.");ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();return canvas.toDataURL("image/jpeg",.72)}
 export default function TasksPage(){
