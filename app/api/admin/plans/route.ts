@@ -31,8 +31,9 @@ export async function PATCH(req: NextRequest) {
   const level = Math.floor(num(b?.level));
   const name = String(b?.name || "").trim();
   const fee = num(b?.activation_fee), cap = num(b?.daily_earning_cap), task = num(b?.task_min_withdrawal), affiliate = num(b?.affiliate_min_withdrawal);
+  const active = Boolean(b?.active);
   if (level < 1 || !name || fee < 0 || cap < 0 || task < 0 || affiliate < 0) return NextResponse.json({ error: "INVALID_PLAN_SETTINGS" }, { status: 400 });
-  const { error } = await dbx.from("activation_levels").update({ name, activation_fee: fee, daily_earning_cap: cap, task_min_withdrawal: task, affiliate_min_withdrawal: affiliate }).eq("level", level);
+  const { error } = await dbx.from("activation_levels").update({ name, activation_fee: fee, daily_earning_cap: cap, task_min_withdrawal: task, affiliate_min_withdrawal: affiliate, active }).eq("level", level);
   if (error) return NextResponse.json({ error: "PLAN_SAVE_ERROR" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
