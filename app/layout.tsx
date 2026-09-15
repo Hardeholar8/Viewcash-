@@ -76,6 +76,40 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 window.addEventListener("pageshow",check);
 })();`}
         </Script>
+        <Script id="viewcash-referral-stats" strategy="afterInteractive">
+          {`(function(){
+var timer=null,lastReferred=null,lastActivated=null;
+var render=function(referred,activated){
+ var headings=document.querySelectorAll("h3"),target=null;
+ headings.forEach(function(h){if(clean(h.innerText||h.textContent)==="Your referral link")target=h});
+ if(!target)return;
+ var card=target.parentElement&&target.parentElement.parentElement;
+ if(!card)return;
+ var stats=card.querySelector(".viewcash-referral-stats");
+ if(!stats){
+   stats=document.createElement("div");
+   stats.className="viewcash-referral-stats mt-4 grid grid-cols-2 gap-3";
+   target.parentElement.after(stats);
+ }
+ stats.innerHTML='<div class="rounded-2xl border border-white/10 bg-white/[.035] p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">People Referred</p><p class="mt-1 text-xl font-black text-slate-100">'+Number(referred||0).toLocaleString()+'</p></div><div class="rounded-2xl border border-emerald-300/15 bg-emerald-400/[.05] p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Activated Referrals</p><p class="mt-1 text-xl font-black text-emerald-300">'+Number(activated||0).toLocaleString()+'</p></div>';
+};
+var clean=function(v){return String(v||"").replace(/\\s+/g," ").trim()};
+var check=function(){
+ var tg=window.Telegram&&window.Telegram.WebApp,data=tg&&tg.initData;
+ if(!data||window.location.pathname!=="/")return;
+ fetch("/api/telegram/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({initData:data}),cache:"no-store"})
+ .then(function(r){return r.json().catch(function(){return {}})})
+ .then(function(d){
+   if(!d)return;
+   var referred=Number(d.referred_count||0),activated=Number(d.activated_referral_count||0);
+   lastReferred=referred;lastActivated=activated;render(referred,activated);
+ }).catch(function(){});
+};
+var start=function(){if(timer)return;check();timer=window.setInterval(check,5000)};
+new MutationObserver(function(){if(lastReferred!==null)render(lastReferred,lastActivated)}).observe(document.documentElement,{subtree:true,childList:true});
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
+})();`}
+        </Script>
         {children}
         <ViewCashBackNavigation />
         <CurrentPlanCard />
