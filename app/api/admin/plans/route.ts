@@ -20,7 +20,7 @@ const num = (v: unknown, f = 0) => { const n = Number(v); return Number.isFinite
 
 export async function GET(req: NextRequest) {
   const dbx = db(req); if (!dbx) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
-  const { data, error } = await dbx.from("activation_levels").select("level,name,activation_fee,daily_earning_cap,task_min_withdrawal,affiliate_min_withdrawal,active").order("level");
+  const { data, error } = await dbx.from("activation_levels").select("level,name,activation_fee,ad_reward_coins,daily_ad_limit,daily_earning_cap,task_min_withdrawal,affiliate_min_withdrawal,active").order("level");
   if (error) return NextResponse.json({ error: "PLAN_LOAD_ERROR" }, { status: 500 });
   return NextResponse.json({ plans: data || [] });
 }
@@ -30,10 +30,10 @@ export async function PATCH(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const level = Math.floor(num(b?.level));
   const name = String(b?.name || "").trim();
-  const fee = num(b?.activation_fee), cap = num(b?.daily_earning_cap), task = num(b?.task_min_withdrawal), affiliate = num(b?.affiliate_min_withdrawal);
+  const fee = num(b?.activation_fee), reward = num(b?.ad_reward_coins), limit = Math.floor(num(b?.daily_ad_limit)), cap = num(b?.daily_earning_cap), task = num(b?.task_min_withdrawal), affiliate = num(b?.affiliate_min_withdrawal);
   const active = Boolean(b?.active);
-  if (level < 1 || !name || fee < 0 || cap < 0 || task < 0 || affiliate < 0) return NextResponse.json({ error: "INVALID_PLAN_SETTINGS" }, { status: 400 });
-  const { error } = await dbx.from("activation_levels").update({ name, activation_fee: fee, daily_earning_cap: cap, task_min_withdrawal: task, affiliate_min_withdrawal: affiliate, active }).eq("level", level);
+  if (level < 1 || !name || fee < 0 || reward < 0 || limit < 0 || cap < 0 || task < 0 || affiliate < 0) return NextResponse.json({ error: "INVALID_PLAN_SETTINGS" }, { status: 400 });
+  const { error } = await dbx.from("activation_levels").update({ name, activation_fee: fee, ad_reward_coins: reward, daily_ad_limit: limit, daily_earning_cap: cap, task_min_withdrawal: task, affiliate_min_withdrawal: affiliate, active }).eq("level", level);
   if (error) return NextResponse.json({ error: "PLAN_SAVE_ERROR" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
