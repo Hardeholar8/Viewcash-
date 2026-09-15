@@ -3,6 +3,8 @@ import { getNigeriaBanks, resolveNigeriaAccount } from "@/lib/flutterwave";
 
 export const dynamic = "force-dynamic";
 
+type Bank = { code: string; name: string };
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
@@ -13,8 +15,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "ENTER_BANK_AND_10_DIGIT_ACCOUNT" }, { status: 400 });
     }
 
-    const banks = await getNigeriaBanks();
-    const bank = banks.find((item) => item.name.toLowerCase() === bankName.toLowerCase());
+    const banks: Bank[] = await getNigeriaBanks();
+    const bank = banks.find((item: Bank) => item.name.toLowerCase() === bankName.toLowerCase());
     if (!bank) {
       return NextResponse.json({ error: "BANK_NOT_FOUND" }, { status: 400 });
     }
