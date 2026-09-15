@@ -48,7 +48,7 @@ async function lookupUser(supabase: any, telegramId: number): Promise<any> {
 async function lookupWallet(supabase: any, userId: string): Promise<any> {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const result = await supabase.from("wallets").select("coins,referral_coins,total_coins_earned,total_coins_withdrawn").eq("user_id", userId).maybeSingle();
+    const result = await supabase.from("wallets").select("coins,referral_balance,total_earned,total_withdrawn").eq("user_id", userId).maybeSingle();
     if (!result.error && result.data) return result.data;
     lastError = result.error || { code: "WALLET_NOT_FOUND", message: "Wallet not found" };
     if (!result.error || !isTransient(result.error.message || "")) break;
@@ -97,7 +97,8 @@ export async function POST(req: NextRequest) {
     }
     const displayName = user.username ? `@${user.username}` : user.first_name || "Telegram User";
     const referralLink = `https://t.me/${BOT_USERNAME}?startapp=${encodeURIComponent(user.referral_code)}`;
-    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, activated: Boolean(user.activated), account_level: user.account_level ?? null, plan: plan ? { name: plan.name, daily_earning_cap: Number(plan.daily_earning_cap ?? 0), activation_fee: Number(plan.activation_fee ?? 0) } : null, referral_code: user.referral_code, referral_link: referralLink, coins: Number(wallet.coins ?? 0), referral_coins: Number(wallet.referral_coins ?? 0), total_coins_earned: Number(wallet.total_coins_earned ?? 0), total_coins_withdrawn: Number(wallet.total_coins_withdrawn ?? 0), balance: Number(wallet.coins ?? 0), referral_balance: Number(wallet.referral_coins ?? 0), new_user: isNew });
+    const referralBalance = Number(wallet.referral_balance ?? 0);
+    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, activated: Boolean(user.activated), account_level: user.account_level ?? null, plan: plan ? { name: plan.name, daily_earning_cap: Number(plan.daily_earning_cap ?? 0), activation_fee: Number(plan.activation_fee ?? 0) } : null, referral_code: user.referral_code, referral_link: referralLink, coins: Number(wallet.coins ?? 0), referral_coins: referralBalance, referral_balance: referralBalance, total_earned: Number(wallet.total_earned ?? 0), total_withdrawn: Number(wallet.total_withdrawn ?? 0), balance: Number(wallet.coins ?? 0), new_user: isNew });
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
     const message = error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR";
