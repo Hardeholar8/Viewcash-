@@ -120,8 +120,6 @@ export default function MonetagWatch({ initData }: { initData: string }) {
       activeSessionRef.current = { sessionId: session.session_id, requestVar: session.request_var, ymid: session.ymid };
       const activeSession = activeSessionRef.current;
 
-      // Start the provider ad and the 15-second server-verified completion timer independently.
-      // This prevents the UI/reward flow from being blocked by Monetag's slow final callback.
       rewardPromiseRef.current = new Promise<number>((resolve, reject) => {
         rewardTimerRef.current = window.setTimeout(async () => {
           if (!watchActiveRef.current || !activeSessionRef.current) return reject(new Error("AD_CANCELLED"));
@@ -136,8 +134,7 @@ export default function MonetagWatch({ initData }: { initData: string }) {
         }, REQUIRED_VIEW_SECONDS * 1000);
       });
 
-      const resultPromise = show({ type: "end", ymid: session.ymid, requestVar: session.request_var, catchIfNoFeed: true });
-      const result = await resultPromise;
+      const result = await show({ type: "end", ymid: session.ymid, requestVar: session.request_var, catchIfNoFeed: true });
       const elapsedSeconds = (Date.now() - watchStartedAtRef.current) / 1000;
 
       if (elapsedSeconds < REQUIRED_VIEW_SECONDS) {
@@ -149,16 +146,14 @@ export default function MonetagWatch({ initData }: { initData: string }) {
         return;
       }
 
-      // The provider may resolve after the 15-second timer. The server-side session check
-      // is the reward gate; the delayed Monetag postback remains available for reconciliation.
-      if (String(result?.reward_event_type || "").toLowerCase() !== "valued") {
-        // Do not revoke a reward already credited after a valid 15-second session. Monetag can
-        // legitimately resolve without a valued result even though the view-duration gate passed.
-        if (!rewardPromiseRef.current) {
-          await cancelActiveSession();
-          setMessage("Ad completed, but Monetag did not confirm a reward for this view.");
-          return;
-        }
+      if (String(result?.reward_event_type || "").toLowerCase() !== "valued" && rewardPromiseRef.current) {
+        const rewardCoins = await rewardPromiseRef.current;
+        rewardPromiseRef.current = null;
+        if (rewardTimerRef.current !== null) window.clearTimeout(rewardTimerRef.current);
+        rewardTimerRef.current = null;
+        setMessage(rewardCoins > 0 ? `Reward added: ${rewardCoins} coins.` : "Ad completed. Reward already credited.");
+        window.dispatchEvent(new CustomEvent("viewcash:wallet-updated"));
+        return;
       }
 
       const rewardPromise = rewardPromiseRef.current;
@@ -169,18 +164,13 @@ export default function MonetagWatch({ initData }: { initData: string }) {
         rewardTimerRef.current = null;
         setMessage(rewardCoins > 0 ? `Reward added: ${rewardCoins} coins.` : "Ad completed. Reward already credited.");
         window.dispatchEvent(new CustomEvent("viewcash:wallet-updated"));
-        if (rewardCoins > 0) window.setTimeout(() => window.location.reload(), 150);
       }
     } catch (error) {
       if (rewardTimerRef.current !== null) window.clearTimeout(rewardTimerRef.current);
       rewardTimerRef.current = null;
       rewardPromiseRef.current = null;
       await cancelActiveSession();
-      if (error instanceof Error && error.message === "AD_CANCELLED") {
-        setMessage("Ad was not completed. Watch the full 15 seconds to receive your reward.");
-      } else {
-        setMessage(error instanceof Error ? error.message : "The ad could not be completed.");
-      }
+      setMessage(error instanceof Error ? error.message : "The ad could not be completed.");
     } finally {
       watchActiveRef.current = false;
       setBusy(false);
