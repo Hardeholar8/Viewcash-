@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 type Level = { level: number; name: string; activation_fee: number };
+type Session = { activated?: boolean };
 
 declare global { interface Window { Telegram?: { WebApp?: { initData?: string } } } }
 
@@ -13,28 +14,33 @@ export default function ActivationLevelGate() {
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
   const [message, setMessage] = useState("");
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       try {
         const tg = window.Telegram?.WebApp;
-        if (!tg?.initData) { if (!cancelled) setLoading(false); return; }
+        const initData = tg?.initData || "";
+        if (!initData) { if (!cancelled) setLoading(false); return; }
+        const sessionResponse = await fetch("/api/telegram/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ initData }), cache: "no-store" });
+        const session = await sessionResponse.json().catch(() => ({} as Session));
+        if (!sessionResponse.ok || session.activated) { if (!cancelled) setLoading(false); return; }
         const r = await fetch("/api/account/activation-levels", { cache: "no-store" });
         const d = await r.json().catch(() => ({}));
         if (!r.ok || !Array.isArray(d.levels)) throw new Error(d.error || "Unable to load activation options.");
-        if (!cancelled) { setLevels(d.levels); setSelected(d.levels[0]?.level ?? null); }
+        if (!cancelled) { setLevels(d.levels); setSelected(d.levels[0]?.level ?? null); setVisible(true); }
       } catch (e) { if (!cancelled) setMessage(e instanceof Error ? e.message : "Unable to load activation options."); }
       finally { if (!cancelled) setLoading(false); }
     };
-    const timer = window.setTimeout(run, 500);
+    const timer = window.setTimeout(run, 700);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, []);
 
   const activate = async () => {
     const initData = window.Telegram?.WebApp?.initData || "";
     if (!selected) return setMessage("Select an activation option.");
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email.trim())) return setMessage("Enter a valid email address.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setMessage("Enter a valid email address.");
     if (!initData) return setMessage("Please open ViewCash from Telegram.");
     setPaying(true); setMessage("");
     try {
@@ -46,7 +52,7 @@ export default function ActivationLevelGate() {
     } catch (e) { setMessage(e instanceof Error ? e.message : "Unable to start activation payment."); setPaying(false); }
   };
 
-  if (loading || !levels.length) return null;
+  if (loading || !visible || !levels.length) return null;
 
   return <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center">
     <div className="w-full max-w-md rounded-[2rem] border border-white/10 bg-[#0b1020] p-5 text-white shadow-2xl">
