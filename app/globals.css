@@ -1,18 +1,79 @@
 @import "tailwindcss";
 
-:root { color-scheme: dark; }
-* { box-sizing: border-box; }
-html, body { margin: 0; min-height: 100%; background: #070b14; color: #f8fafc; font-family: Arial, Helvetica, sans-serif; }
-button { font: inherit; }
+:root {
+  color-scheme: dark;
+  --vc-bg: #070b14;
+  --vc-panel: rgba(255, 255, 255, 0.035);
+  --vc-border: rgba(255, 255, 255, 0.09);
+  --vc-cyan: #22d3ee;
+}
 
-/* ViewCash smaller, tighter premium cards */
-.rounded-3xl { border-radius: 1rem; }
-.rounded-2xl { border-radius: 0.8rem; }
-.p-6 { padding: 0.875rem; }
-.p-5 { padding: 0.75rem; }
-.p-4 { padding: 0.65rem; }
-.text-4xl { font-size: 1.8rem; line-height: 1.05; }
-.shadow-lg { box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16); }
+* { box-sizing: border-box; }
+html { min-height: 100%; background: var(--vc-bg); }
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(34, 211, 238, 0.08), transparent 34%),
+    var(--vc-bg);
+  color: #f8fafc;
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button, input, select { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+button:not(:disabled) { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid rgba(34, 211, 238, 0.65);
+  outline-offset: 2px;
+}
+
+/* Compact, premium mobile surfaces. */
+.rounded-3xl { border-radius: 1.15rem; }
+.rounded-2xl { border-radius: 0.9rem; }
+.p-6 { padding: 0.95rem; }
+.p-5 { padding: 0.82rem; }
+.p-4 { padding: 0.72rem; }
+.text-4xl { font-size: 1.9rem; line-height: 1.05; }
+.shadow-lg { box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18); }
+
+/* Shared form control used by activation and withdrawal screens. */
+.field {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--vc-border);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.045);
+  color: #f8fafc;
+  padding: 0.72rem 0.85rem;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+.field::placeholder { color: #64748b; }
+.field:hover { background: rgba(255, 255, 255, 0.055); }
+.field:focus {
+  border-color: rgba(34, 211, 238, 0.45);
+  background: rgba(34, 211, 238, 0.045);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.07);
+  outline: none;
+}
+select.field { color-scheme: dark; }
+
+/* Better touch feedback without changing application behavior. */
+button:not(:disabled) { transition: transform 140ms ease, opacity 140ms ease, background 160ms ease, border-color 160ms ease; }
+button:not(:disabled):active { transform: scale(0.985); }
+
+/* Keep the fixed Telegram/Mini App navigation inside the safe area. */
+nav.fixed {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+/* Hide scrollbars while keeping horizontal/vertical scrolling usable. */
+::-webkit-scrollbar { width: 0; height: 0; }
+* { scrollbar-width: none; }
 
 /* ViewCash notices auto-dismiss visually after 2.5 seconds. */
 @keyframes viewcash-notice-dismiss {
