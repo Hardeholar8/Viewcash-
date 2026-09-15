@@ -3,6 +3,7 @@ import Script from "next/script";
 import "./globals.css";
 import ActivationLevelGate from "./components/activation-level-gate";
 import ViewCashBackNavigation from "./components/viewcash-back-navigation";
+import CurrentPlanCard from "./components/current-plan-card";
 
 export const metadata: Metadata = {
   title: "ViewCash",
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         </Script>
         {children}
         <ViewCashBackNavigation />
+        <CurrentPlanCard />
         <ActivationLevelGate />
       </body>
     </html>
