@@ -12,7 +12,7 @@ declare global {
 
 const DEFAULT_MONETAG_ZONE = "11801942";
 
-export default function MonetagWatch({ initData }: { initData: string }) {
+export default function MonetagWatch({ initData, onRewardConfirmed }: { initData: string; onRewardConfirmed?: () => Promise<void> | void }) {
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -47,6 +47,16 @@ export default function MonetagWatch({ initData }: { initData: string }) {
     return () => window.clearInterval(timer);
   }, [zone]);
 
+  const syncAfterReward = async () => {
+    // Monetag postbacks are server-to-server and can arrive shortly after the
+    // ad SDK resolves. Give the callback a few chances to credit the wallet.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await new Promise(resolve => window.setTimeout(resolve, attempt === 0 ? 1200 : 1000));
+      await onRewardConfirmed?.();
+      if (attempt < 4) await new Promise(resolve => window.setTimeout(resolve, 250));
+    }
+  };
+
   const watch = async () => {
     if (!initData) return setMessage("Open ViewCash from Telegram first.");
     if (!zone) return setMessage("Ads are being configured.");
@@ -70,7 +80,9 @@ export default function MonetagWatch({ initData }: { initData: string }) {
         catchIfNoFeed: true,
       });
       if (result?.reward_event_type === "valued") {
-        setMessage("Ad completed. Your coins will be credited after server confirmation.");
+        setMessage("Ad completed. Confirming your coins...");
+        await syncAfterReward();
+        setMessage("Ad completed. Your coins have been refreshed after server confirmation.");
       } else {
         setMessage("Ad completed, but it was not a paid event. No coins were added.");
       }
@@ -84,7 +96,7 @@ export default function MonetagWatch({ initData }: { initData: string }) {
   return (
     <div className="mt-3">
       <button onClick={watch} disabled={busy || !ready} className="w-full rounded-2xl bg-cyan-400 py-3.5 text-sm font-extrabold text-slate-950 shadow-[0_10px_30px_rgba(34,211,238,0.12)] disabled:opacity-50">
-        {busy ? "Loading ad..." : !zone ? "Ads being configured" : !ready ? "Loading ad..." : "Watch Ad"}
+        {busy ? "Confirming reward..." : !zone ? "Ads being configured" : !ready ? "Loading ad..." : "Watch Ad"}
       </button>
       {message && <p className="mt-3 rounded-2xl bg-white/[.03] px-3 py-2.5 text-xs leading-5 text-slate-400">{message}</p>}
     </div>
