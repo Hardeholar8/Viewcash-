@@ -16,7 +16,43 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
         <Script id="viewcash-navigation" strategy="afterInteractive">
-          {`document.addEventListener("click",function(e){var t=e.target;var b=t&&t.closest?t.closest("button"):null;if(!b||!b.textContent)return;var x=b.textContent.replace(/\\s+/g," ").trim();if(location.pathname==="/admin"&&x==="Fraud / Risk"){e.preventDefault();e.stopImmediatePropagation();location.assign("/admin/fraud");return}if(location.pathname==="/admin"&&x==="Tasks"){e.preventDefault();e.stopImmediatePropagation();location.assign("/admin/tasks");return}if(location.pathname==="/"){if(/^Tasks$/i.test(x)){e.preventDefault();e.stopImmediatePropagation();location.assign("/tasks");return}if(x==="Withdraw"){var p=b.parentElement;var wallet="tasks";for(var i=0;i<5&&p;i++){var text=(p.innerText||"").replace(/\\s+/g," ").trim();if(/Affiliate Wallet/i.test(text)&&!/Task Wallet/i.test(text)){wallet="affiliate";break}if(/Task Wallet/i.test(text)&&!/Affiliate Wallet/i.test(text)){wallet="tasks";break}p=p.parentElement}e.preventDefault();e.stopImmediatePropagation();location.assign("/withdraw?wallet="+wallet);return}},true);`}
+          {`(function(){
+var go=function(path){try{window.location.assign(path)}catch(e){window.location.href=path}};
+var clean=function(v){return String(v||"").replace(/\\s+/g," ").trim()};
+var route=function(e){
+ var t=e.target,b=t&&t.closest?t.closest("button"):null;
+ if(!b)return;
+ var x=clean(b.innerText||b.textContent);
+ var path=window.location.pathname;
+ if(path==="/admin"&&x==="Fraud / Risk"){e.preventDefault();e.stopImmediatePropagation();go("/admin/fraud");return}
+ if(path==="/admin"&&x==="Tasks"){e.preventDefault();e.stopImmediatePropagation();go("/admin/tasks");return}
+ if(path!=="/")return;
+ if(/^Tasks$/i.test(x)){
+   e.preventDefault();e.stopImmediatePropagation();go("/tasks");return;
+ }
+ if(x==="Withdraw"){
+   var p=b.parentElement,wallet="tasks";
+   for(var i=0;i<7&&p;i++){
+     var text=clean(p.innerText);
+     if(/Affiliate Wallet/i.test(text)&&!/Task Wallet/i.test(text)){wallet="affiliate";break}
+     if(/Task Wallet/i.test(text)&&!/Affiliate Wallet/i.test(text)){wallet="tasks";break}
+     p=p.parentElement;
+   }
+   e.preventDefault();e.stopImmediatePropagation();go("/withdraw?wallet="+wallet);return;
+ }
+};
+["pointerdown","touchstart","click"].forEach(function(name){document.addEventListener(name,route,true)});
+var mark=function(){
+ if(window.location.pathname!=="/")return;
+ document.querySelectorAll("button").forEach(function(b){
+   var x=clean(b.innerText||b.textContent);
+   if(/^Tasks$/i.test(x))b.setAttribute("data-viewcash-route","/tasks");
+   if(x==="Withdraw")b.setAttribute("data-viewcash-route","/withdraw");
+ });
+};
+new MutationObserver(mark).observe(document.documentElement,{subtree:true,childList:true});
+mark();
+})();`}
         </Script>
         {children}
         <ViewCashBackNavigation />
