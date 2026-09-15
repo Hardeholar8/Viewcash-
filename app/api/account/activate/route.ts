@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
 
     const txRef = `VC-ACT-${user.id}-${selectedLevel}-${Date.now()}`;
     const base = (process.env.NEXT_PUBLIC_SITE_URL || "https://viewcash-olive.vercel.app").replace(/\/$/, "");
-    const { error: insertError } = await db.from("activation_requests").insert({ user_id: user.id, amount, currency: "NGN", tx_ref: txRef, status: "pending", metadata: { account_level: selectedLevel, level_name: activationLevel.name } });
+    const { error: insertError } = await db.from("activation_requests").insert({ user_id: user.id, amount, account_level: selectedLevel, currency: "NGN", tx_ref: txRef, status: "pending", metadata: { account_level: selectedLevel, level_name: activationLevel.name } });
     if (insertError) throw insertError;
 
     const response = await fetch("https://api.flutterwave.com/v3/payments", {
