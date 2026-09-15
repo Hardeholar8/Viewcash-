@@ -11,6 +11,7 @@ declare global {
 }
 
 const DEFAULT_MONETAG_ZONE = "11801942";
+const REQUIRED_VIEW_SECONDS = 15;
 
 export default function MonetagWatch({ initData }: { initData: string }) {
   const [ready, setReady] = useState(false);
@@ -18,6 +19,8 @@ export default function MonetagWatch({ initData }: { initData: string }) {
   const [message, setMessage] = useState("");
   const watchActiveRef = useRef(false);
   const backGuardRef = useRef(false);
+  const activeSessionRef = useRef<{ requestVar: string; ymid: string } | null>(null);
+  const watchStartedAtRef = useRef(0);
   const zone = process.env.NEXT_PUBLIC_MONETAG_ZONE_ID?.trim() || DEFAULT_MONETAG_ZONE;
 
   useEffect(() => {
@@ -49,16 +52,29 @@ export default function MonetagWatch({ initData }: { initData: string }) {
     return () => window.clearInterval(timer);
   }, [zone]);
 
-  // Keep the user on the Watch Ad page while an ad is running. If the phone
-  // Back button fires before the ad is completed, restore the current history
-  // entry instead of navigating away. This never credits a reward.
+  const cancelActiveSession = async () => {
+    const session = activeSessionRef.current;
+    if (!session || !initData) return;
+    activeSessionRef.current = null;
+    await fetch("/api/ads/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData, request_var: session.requestVar, ymid: session.ymid }),
+      cache: "no-store",
+    }).catch(() => null);
+  };
+
+  // Keep the user on the Watch Ad page while an ad is running. Back before
+  // completion cancels the active session, so a later provider retry cannot
+  // credit the unfinished view.
   useEffect(() => {
     const handleBack = () => {
       if (!watchActiveRef.current) return;
       if (backGuardRef.current) return;
       backGuardRef.current = true;
+      void cancelActiveSession();
       window.history.pushState({ viewcashAdGuard: true }, "", window.location.href);
-      setMessage("Please finish the ad to receive your reward.");
+      setMessage("Please complete the full 15-second ad to receive your reward.");
       window.setTimeout(() => {
         backGuardRef.current = false;
       }, 100);
@@ -66,7 +82,7 @@ export default function MonetagWatch({ initData }: { initData: string }) {
 
     window.addEventListener("popstate", handleBack);
     return () => window.removeEventListener("popstate", handleBack);
-  }, []);
+  }, [initData]);
 
   const waitForConfirmation = async (requestVar: string, ymid: string) => {
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -93,6 +109,7 @@ export default function MonetagWatch({ initData }: { initData: string }) {
     if (!show) return setMessage("Ad is not ready yet. Please try again.");
     setBusy(true);
     watchActiveRef.current = true;
+    watchStartedAtRef.current = Date.now();
     // Add a same-page history entry so the phone Back action can be consumed
     // while the rewarded ad is active.
     window.history.pushState({ viewcashAdGuard: true }, "", window.location.href);
@@ -106,12 +123,23 @@ export default function MonetagWatch({ initData }: { initData: string }) {
       });
       const session = await sessionResponse.json().catch(() => ({}));
       if (!sessionResponse.ok) throw new Error(session.error || "Unable to start ad.");
+      activeSessionRef.current = { requestVar: session.request_var, ymid: session.ymid };
+
       const result = await show({
         type: "end",
         ymid: session.ymid,
         requestVar: session.request_var,
         catchIfNoFeed: true,
       });
+
+      const elapsedSeconds = (Date.now() - watchStartedAtRef.current) / 1000;
+      if (elapsedSeconds < REQUIRED_VIEW_SECONDS) {
+        await cancelActiveSession();
+        setMessage("Ad was not completed. Watch the full 15 seconds to receive your reward.");
+        return;
+      }
+
+      activeSessionRef.current = null;
       if (result?.reward_event_type === "valued") {
         setMessage("Ad completed. Confirming your coins...");
         const confirmed = await waitForConfirmation(session.request_var, session.ymid);
@@ -120,6 +148,7 @@ export default function MonetagWatch({ initData }: { initData: string }) {
         setMessage("Ad completed, but it was not a paid event. No coins were added.");
       }
     } catch (error) {
+      await cancelActiveSession();
       setMessage(error instanceof Error ? error.message : "The ad could not be completed.");
     } finally {
       watchActiveRef.current = false;
