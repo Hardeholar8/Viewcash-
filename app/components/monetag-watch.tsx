@@ -141,6 +141,9 @@ export default function MonetagWatch({ initData }: { initData: string }) {
       activeSessionRef.current = null;
       setMessage(rewardCoins > 0 ? `Reward added: ${rewardCoins} coins.` : "Ad completed. Reward already credited.");
       window.dispatchEvent(new CustomEvent("viewcash:wallet-updated"));
+      // The parent dashboard currently does not subscribe to the wallet event.
+      // Reload after a successful credit so the freshly credited wallet is shown immediately.
+      if (rewardCoins > 0) window.setTimeout(() => window.location.reload(), 150);
     } catch (error) {
       await cancelActiveSession();
       setMessage(error instanceof Error ? error.message : "The ad could not be completed.");
