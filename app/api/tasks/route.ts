@@ -10,7 +10,7 @@ function validateInitData(initData: string, botToken: string) {
   const hash = params.get("hash");
   if (!hash) throw new Error("TELEGRAM_SESSION_INVALID");
   params.delete("hash");
-  const check = [...params.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k,v]) => `${k}=${v}`).join("\n");
+  const check = [...params.entries()].sort(([a], [b]) => a < b ? 1 : -1).reverse().map(([k,v]) => `${k}=${v}`).join("\n");
   const secret = crypto.createHmac("sha256", "WebAppData").update(botToken.trim()).digest();
   const calculated = crypto.createHmac("sha256", secret).update(check).digest("hex");
   if (calculated.length !== hash.length || !crypto.timingSafeEqual(Buffer.from(calculated), Buffer.from(hash))) throw new Error("TELEGRAM_SESSION_INVALID");
@@ -83,7 +83,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(data);
     }
     if (!task.proof_required) return NextResponse.json({ error: "VERIFICATION_NOT_AVAILABLE" }, { status: 400 });
-    if (!proofUrl || !/^https?:\/\//i.test(proofUrl)) return NextResponse.json({ error: "PROOF_REQUIRED" }, { status: 400 });
+    if (!proofUrl || !/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(proofUrl)) return NextResponse.json({ error: "PROOF_SCREENSHOT_REQUIRED" }, { status: 400 });
+    if (proofUrl.length > 2500000) return NextResponse.json({ error: "PROOF_SCREENSHOT_TOO_LARGE" }, { status: 413 });
     const { data, error } = await supabase.rpc("complete_verified_task", { p_task_id: task.id, p_user_id: user.id, p_proof_url: proofUrl });
     if (error) throw error;
     if (!data?.ok) return NextResponse.json({ error: data?.error || "TASK_NOT_COMPLETED" }, { status: 400 });
