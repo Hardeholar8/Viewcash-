@@ -3,7 +3,10 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const KEYS = [
-  "ad_reward", "daily_ad_limit", "ad_cooldown_seconds",
+  "ad_reward", "ad_reward_coins", "daily_ad_limit", "ad_cooldown_seconds",
+  "coin_cash_rate", "minimum_withdrawal", "minimum_withdrawal_coins",
+  "activation_fee", "referral_reward", "referral_reward_coins", "referral_requires_activation",
+  "task_reward_coins", "welcome_bonus_coins", "admin_telegram_id",
   "fraud_max_ads_per_minute", "fraud_max_tasks_per_minute", "fraud_max_withdrawals_per_day",
   "fraud_auto_suspend_critical", "fraud_block_duplicate_reward_events", "fraud_flag_rapid_activity",
 ];
@@ -32,37 +35,35 @@ function num(value: unknown, fallback: number) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
+function bool(value: unknown, fallback: boolean) {
+  if (typeof value === "boolean") return value;
+  return fallback;
+}
+function first(raw: Record<string, unknown>, key: string) {
+  const value = raw[key] as Record<string, unknown> | number | boolean | null | undefined;
+  if (value !== null && typeof value === "object") return Object.values(value)[0];
+  return value;
+}
 
 export async function GET(req: NextRequest) {
   const supabase = db(req);
   if (!supabase) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
   const { data, error } = await supabase.from("settings").select("key,value").in("key", KEYS);
   if (error) return NextResponse.json({ error: "ADMIN_SETTINGS_ERROR" }, { status: 500 });
-
   const raw: Record<string, unknown> = {};
   for (const row of data || []) raw[row.key] = row.value;
-  const getNum = (key: string, fallback: number) => {
-    const value = raw[key] as Record<string, unknown> | number | null;
-    if (typeof value === "number") return value;
-    return num(value && typeof value === "object" ? Object.values(value)[0] : value, fallback);
-  };
-  const getBool = (key: string, fallback: boolean) => {
-    const value = raw[key] as Record<string, unknown> | boolean | null;
-    if (typeof value === "boolean") return value;
-    const first = value && typeof value === "object" ? Object.values(value)[0] : value;
-    return typeof first === "boolean" ? first : fallback;
-  };
-
+  const n = (key: string, fallback: number) => num(first(raw, key), fallback);
+  const b = (key: string, fallback: boolean) => bool(first(raw, key), fallback);
   return NextResponse.json({
-    ad_reward: getNum("ad_reward", 0),
-    daily_ad_limit: getNum("daily_ad_limit", 20),
-    ad_cooldown_seconds: getNum("ad_cooldown_seconds", 30),
-    fraud_max_ads_per_minute: getNum("fraud_max_ads_per_minute", 3),
-    fraud_max_tasks_per_minute: getNum("fraud_max_tasks_per_minute", 5),
-    fraud_max_withdrawals_per_day: getNum("fraud_max_withdrawals_per_day", 2),
-    fraud_auto_suspend_critical: getBool("fraud_auto_suspend_critical", true),
-    fraud_block_duplicate_reward_events: getBool("fraud_block_duplicate_reward_events", true),
-    fraud_flag_rapid_activity: getBool("fraud_flag_rapid_activity", true),
+    ad_reward: n("ad_reward", 0), ad_reward_coins: n("ad_reward_coins", 100),
+    daily_ad_limit: n("daily_ad_limit", 20), ad_cooldown_seconds: n("ad_cooldown_seconds", 30),
+    coin_cash_rate: { cash: n("coin_cash_rate_cash", 100), coins: n("coin_cash_rate_coins", 1000) },
+    minimum_withdrawal: n("minimum_withdrawal", 1000), minimum_withdrawal_coins: n("minimum_withdrawal_coins", 10000),
+    activation_fee: n("activation_fee", 1000), referral_reward: n("referral_reward", 0), referral_reward_coins: n("referral_reward_coins", 100),
+    referral_requires_activation: b("referral_requires_activation", true), task_reward_coins: n("task_reward_coins", 0), welcome_bonus_coins: n("welcome_bonus_coins", 100),
+    admin_telegram_id: n("admin_telegram_id", 7160561113),
+    fraud_max_ads_per_minute: n("fraud_max_ads_per_minute", 3), fraud_max_tasks_per_minute: n("fraud_max_tasks_per_minute", 5), fraud_max_withdrawals_per_day: n("fraud_max_withdrawals_per_day", 2),
+    fraud_auto_suspend_critical: b("fraud_auto_suspend_critical", true), fraud_block_duplicate_reward_events: b("fraud_block_duplicate_reward_events", true), fraud_flag_rapid_activity: b("fraud_flag_rapid_activity", true),
   });
 }
 
@@ -71,28 +72,29 @@ export async function POST(req: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
   const body = await req.json().catch(() => null);
   const values = {
-    ad_reward: num(body?.ad_reward, 0),
-    daily_ad_limit: num(body?.daily_ad_limit, 20),
-    ad_cooldown_seconds: num(body?.ad_cooldown_seconds, 30),
-    fraud_max_ads_per_minute: num(body?.fraud_max_ads_per_minute, 3),
-    fraud_max_tasks_per_minute: num(body?.fraud_max_tasks_per_minute, 5),
-    fraud_max_withdrawals_per_day: num(body?.fraud_max_withdrawals_per_day, 2),
-    fraud_auto_suspend_critical: Boolean(body?.fraud_auto_suspend_critical),
-    fraud_block_duplicate_reward_events: Boolean(body?.fraud_block_duplicate_reward_events),
-    fraud_flag_rapid_activity: Boolean(body?.fraud_flag_rapid_activity),
+    ad_reward: num(body?.ad_reward, 0), ad_reward_coins: num(body?.ad_reward_coins, 100),
+    daily_ad_limit: num(body?.daily_ad_limit, 20), ad_cooldown_seconds: num(body?.ad_cooldown_seconds, 30),
+    coin_cash_rate_cash: num(body?.coin_cash_rate_cash, 100), coin_cash_rate_coins: num(body?.coin_cash_rate_coins, 1000),
+    minimum_withdrawal: num(body?.minimum_withdrawal, 1000), minimum_withdrawal_coins: num(body?.minimum_withdrawal_coins, 10000),
+    activation_fee: num(body?.activation_fee, 1000), referral_reward: num(body?.referral_reward, 0), referral_reward_coins: num(body?.referral_reward_coins, 100),
+    referral_requires_activation: bool(body?.referral_requires_activation, true), task_reward_coins: num(body?.task_reward_coins, 0), welcome_bonus_coins: num(body?.welcome_bonus_coins, 100),
+    admin_telegram_id: num(body?.admin_telegram_id, 7160561113),
+    fraud_max_ads_per_minute: num(body?.fraud_max_ads_per_minute, 3), fraud_max_tasks_per_minute: num(body?.fraud_max_tasks_per_minute, 5), fraud_max_withdrawals_per_day: num(body?.fraud_max_withdrawals_per_day, 2),
+    fraud_auto_suspend_critical: bool(body?.fraud_auto_suspend_critical, true), fraud_block_duplicate_reward_events: bool(body?.fraud_block_duplicate_reward_events, true), fraud_flag_rapid_activity: bool(body?.fraud_flag_rapid_activity, true),
   };
-  if (values.ad_reward < 0 || values.daily_ad_limit < 1 || !Number.isInteger(values.daily_ad_limit) || values.ad_cooldown_seconds < 0 || !Number.isInteger(values.ad_cooldown_seconds) || values.fraud_max_ads_per_minute < 1 || !Number.isInteger(values.fraud_max_ads_per_minute) || values.fraud_max_tasks_per_minute < 1 || !Number.isInteger(values.fraud_max_tasks_per_minute) || values.fraud_max_withdrawals_per_day < 1 || !Number.isInteger(values.fraud_max_withdrawals_per_day)) return NextResponse.json({ error: "INVALID_SETTINGS" }, { status: 400 });
+  const integerKeys = ["daily_ad_limit", "ad_cooldown_seconds", "coin_cash_rate_cash", "coin_cash_rate_coins", "minimum_withdrawal", "minimum_withdrawal_coins", "activation_fee", "referral_reward_coins", "task_reward_coins", "welcome_bonus_coins", "admin_telegram_id", "fraud_max_ads_per_minute", "fraud_max_tasks_per_minute", "fraud_max_withdrawals_per_day"] as const;
+  if (Object.entries(values).some(([k, v]) => typeof v === "number" && v < 0) || integerKeys.some(k => !Number.isInteger(values[k])) || values.daily_ad_limit < 1 || values.coin_cash_rate_cash <= 0 || values.coin_cash_rate_coins <= 0 || values.admin_telegram_id <= 0 || values.fraud_max_ads_per_minute < 1 || values.fraud_max_tasks_per_minute < 1 || values.fraud_max_withdrawals_per_day < 1) return NextResponse.json({ error: "INVALID_SETTINGS" }, { status: 400 });
 
   const rows = [
-    { key: "ad_reward", value: { amount: values.ad_reward } },
-    { key: "daily_ad_limit", value: { count: values.daily_ad_limit } },
-    { key: "ad_cooldown_seconds", value: { seconds: values.ad_cooldown_seconds } },
-    { key: "fraud_max_ads_per_minute", value: { value: values.fraud_max_ads_per_minute } },
-    { key: "fraud_max_tasks_per_minute", value: { value: values.fraud_max_tasks_per_minute } },
-    { key: "fraud_max_withdrawals_per_day", value: { value: values.fraud_max_withdrawals_per_day } },
-    { key: "fraud_auto_suspend_critical", value: { value: values.fraud_auto_suspend_critical } },
-    { key: "fraud_block_duplicate_reward_events", value: { value: values.fraud_block_duplicate_reward_events } },
-    { key: "fraud_flag_rapid_activity", value: { value: values.fraud_flag_rapid_activity } },
+    { key: "ad_reward", value: { amount: values.ad_reward } }, { key: "ad_reward_coins", value: { amount: values.ad_reward_coins } },
+    { key: "daily_ad_limit", value: { count: values.daily_ad_limit } }, { key: "ad_cooldown_seconds", value: { seconds: values.ad_cooldown_seconds } },
+    { key: "coin_cash_rate", value: { cash: values.coin_cash_rate_cash, coins: values.coin_cash_rate_coins } },
+    { key: "minimum_withdrawal", value: { amount: values.minimum_withdrawal } }, { key: "minimum_withdrawal_coins", value: { amount: values.minimum_withdrawal_coins } },
+    { key: "activation_fee", value: { amount: values.activation_fee } }, { key: "referral_reward", value: { amount: values.referral_reward } }, { key: "referral_reward_coins", value: { amount: values.referral_reward_coins } },
+    { key: "referral_requires_activation", value: { value: values.referral_requires_activation } }, { key: "task_reward_coins", value: { amount: values.task_reward_coins } }, { key: "welcome_bonus_coins", value: { amount: values.welcome_bonus_coins } },
+    { key: "admin_telegram_id", value: values.admin_telegram_id },
+    { key: "fraud_max_ads_per_minute", value: { value: values.fraud_max_ads_per_minute } }, { key: "fraud_max_tasks_per_minute", value: { value: values.fraud_max_tasks_per_minute } }, { key: "fraud_max_withdrawals_per_day", value: { value: values.fraud_max_withdrawals_per_day } },
+    { key: "fraud_auto_suspend_critical", value: { value: values.fraud_auto_suspend_critical } }, { key: "fraud_block_duplicate_reward_events", value: { value: values.fraud_block_duplicate_reward_events } }, { key: "fraud_flag_rapid_activity", value: { value: values.fraud_flag_rapid_activity } },
   ];
   const { error } = await supabase.from("settings").upsert(rows, { onConflict: "key" });
   if (error) return NextResponse.json({ error: "ADMIN_SETTINGS_SAVE_ERROR" }, { status: 500 });
