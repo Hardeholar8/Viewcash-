@@ -58,7 +58,13 @@ export async function POST(req: NextRequest) {
     }
 
     const items: HistoryItem[] = [];
+    // ad_rewards is the canonical record for rewarded ads. The credit RPC also
+    // creates a transaction row, so do not render that same reward twice.
     for (const row of transactions.data || []) {
+      const type = String(row.type || "").toLowerCase();
+      const reference = String(row.reference || "").toLowerCase();
+      const description = String(row.description || "").toLowerCase();
+      if (type === "ad_reward" || reference.startsWith("ad_reward:") || description.includes("monetag rewarded ad")) continue;
       items.push({ id: `tx-${row.id}`, type: "transaction", title: String(row.type || "Transaction").replace(/_/g, " "), description: row.description || row.reference || "Wallet activity", amount: Number(row.amount || 0), balance_type: row.balance_type || "tasks", status: "completed", created_at: row.created_at });
     }
     for (const row of checkins.data || []) {
