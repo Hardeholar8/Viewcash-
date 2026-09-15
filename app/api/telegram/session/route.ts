@@ -36,7 +36,7 @@ const isTransient = (message: string) => /gateway timeout|bad gateway|service un
 async function lookupUser(supabase: any, telegramId: number): Promise<any> {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,activated").eq("telegram_id", telegramId).maybeSingle();
+    const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,activated,account_level").eq("telegram_id", telegramId).maybeSingle();
     if (!result.error) return result.data;
     lastError = result.error;
     if (!isTransient(result.error.message || "")) break;
@@ -63,14 +63,11 @@ export async function POST(req: NextRequest) {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!botToken || !serviceRoleKey) throw new Error("VIEWCASH_SERVER_CONFIG_ERROR");
-
     const { user: telegramUser, startParam } = validateInitData(String(initData || ""), botToken);
     const supabase = createClient(VIEWCASH_SUPABASE_URL, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const referralCode = `VC${telegramUser.id.toString(36).toUpperCase()}`;
-
     let user: any = await lookupUser(supabase, telegramUser.id);
     let isNew = false;
-
     if (!user) {
       isNew = true;
       let referredBy: string | null = null;
@@ -78,13 +75,11 @@ export async function POST(req: NextRequest) {
         const { data: referrer } = await supabase.from("users").select("id").eq("referral_code", startParam).maybeSingle();
         if (referrer?.id) referredBy = referrer.id;
       }
-      const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode, referred_by: referredBy }).select("id,telegram_id,username,first_name,last_name,referral_code,activated").single();
+      const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode, referred_by: referredBy }).select("id,telegram_id,username,first_name,last_name,referral_code,activated,account_level").single();
       if (error) throw new Error(supabaseError("SUPABASE_USER_CREATE_ERROR", error));
       user = data;
-
       const { error: walletError } = await supabase.from("wallets").insert({ user_id: user.id });
       if (walletError) throw new Error(supabaseError("SUPABASE_WALLET_CREATE_ERROR", walletError));
-
       const { data: setting } = await supabase.from("settings").select("value").eq("key", "welcome_bonus_coins").maybeSingle();
       const welcomeCoins = Number((setting?.value as { amount?: number } | null)?.amount || 0);
       if (welcomeCoins > 0) {
@@ -94,29 +89,15 @@ export async function POST(req: NextRequest) {
       }
       if (referredBy) await supabase.from("referrals").insert({ referrer_id: referredBy, referred_user_id: user.id, reward_amount: 0, status: "pending" });
     }
-
     const wallet = await lookupWallet(supabase, user.id);
+    let plan: any = null;
+    if (user.account_level) {
+      const { data: level } = await supabase.from("activation_levels").select("level,name,daily_earning_cap,activation_fee").eq("level", user.account_level).maybeSingle();
+      plan = level || null;
+    }
     const displayName = user.username ? `@${user.username}` : user.first_name || "Telegram User";
     const referralLink = `https://t.me/${BOT_USERNAME}?startapp=${encodeURIComponent(user.referral_code)}`;
-
-    return NextResponse.json({
-      ok: true,
-      telegram_id: telegramUser.id,
-      username: user.username,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      display_name: displayName,
-      activated: Boolean(user.activated),
-      referral_code: user.referral_code,
-      referral_link: referralLink,
-      coins: Number(wallet.coins ?? 0),
-      referral_coins: Number(wallet.referral_coins ?? 0),
-      total_coins_earned: Number(wallet.total_coins_earned ?? 0),
-      total_coins_withdrawn: Number(wallet.total_coins_withdrawn ?? 0),
-      balance: Number(wallet.coins ?? 0),
-      referral_balance: Number(wallet.referral_coins ?? 0),
-      new_user: isNew
-    });
+    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, activated: Boolean(user.activated), account_level: user.account_level ?? null, plan: plan ? { name: plan.name, daily_earning_cap: Number(plan.daily_earning_cap ?? 0), activation_fee: Number(plan.activation_fee ?? 0) } : null, referral_code: user.referral_code, referral_link: referralLink, coins: Number(wallet.coins ?? 0), referral_coins: Number(wallet.referral_coins ?? 0), total_coins_earned: Number(wallet.total_coins_earned ?? 0), total_coins_withdrawn: Number(wallet.total_coins_withdrawn ?? 0), balance: Number(wallet.coins ?? 0), referral_balance: Number(wallet.referral_coins ?? 0), new_user: isNew });
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
     const message = error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR";
