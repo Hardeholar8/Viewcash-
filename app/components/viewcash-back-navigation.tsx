@@ -69,12 +69,10 @@ export default function ViewCashBackNavigation() {
       return;
     }
 
-    // If the previous page is not currently represented by a button, return Home.
     const homeButton = findPageButton("Home");
     if (homeButton) {
       suppress.current = true;
-      button?.click();
-      if (!button) homeButton.click();
+      homeButton.click();
     }
   };
 
