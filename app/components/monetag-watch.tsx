@@ -12,7 +12,7 @@ declare global {
 
 const DEFAULT_MONETAG_ZONE = "11801942";
 
-export default function MonetagWatch({ initData, onRewardConfirmed }: { initData: string; onRewardConfirmed?: () => Promise<void> | void }) {
+export default function MonetagWatch({ initData }: { initData: string }) {
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -47,14 +47,24 @@ export default function MonetagWatch({ initData, onRewardConfirmed }: { initData
     return () => window.clearInterval(timer);
   }, [zone]);
 
-  const syncAfterReward = async () => {
-    // Monetag postbacks are server-to-server and can arrive shortly after the
-    // ad SDK resolves. Give the callback a few chances to credit the wallet.
-    for (let attempt = 0; attempt < 5; attempt++) {
+  const waitForConfirmation = async (requestVar: string, ymid: string) => {
+    for (let attempt = 0; attempt < 8; attempt++) {
       await new Promise(resolve => window.setTimeout(resolve, attempt === 0 ? 1200 : 1000));
-      await onRewardConfirmed?.();
-      if (attempt < 4) await new Promise(resolve => window.setTimeout(resolve, 250));
+      const r = await fetch("/api/ads/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initData, request_var: requestVar, ymid }),
+        cache: "no-store",
+      }).catch(() => null);
+      const d = await r?.json().catch(() => ({}));
+      if (r?.ok && d?.confirmed) {
+        // The server has already credited the wallet atomically. Reloading the
+        // Mini App now makes the Home/Wallet balance read the new value.
+        window.location.reload();
+        return true;
+      }
     }
+    return false;
   };
 
   const watch = async () => {
@@ -81,8 +91,8 @@ export default function MonetagWatch({ initData, onRewardConfirmed }: { initData
       });
       if (result?.reward_event_type === "valued") {
         setMessage("Ad completed. Confirming your coins...");
-        await syncAfterReward();
-        setMessage("Ad completed. Your coins have been refreshed after server confirmation.");
+        const confirmed = await waitForConfirmation(session.request_var, session.ymid);
+        if (!confirmed) setMessage("Ad completed. The server is still waiting for the partner confirmation. Your coins will only be added after confirmation.");
       } else {
         setMessage("Ad completed, but it was not a paid event. No coins were added.");
       }
