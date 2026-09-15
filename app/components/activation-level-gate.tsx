@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type Level = { level: number; name: string; activation_fee: number };
+type Level = { level: number; name: string; activation_fee: number; daily_earning_cap?: number };
 type Session = { activated?: boolean };
 
 declare global { interface Window { Telegram?: { WebApp?: { initData?: string } } } }
@@ -60,7 +60,7 @@ export default function ActivationLevelGate() {
       <h2 className="mt-1 text-2xl font-black">Choose your activation</h2>
       <p className="mt-2 text-sm leading-5 text-slate-400">Select one option. Your choice is saved when activation is completed.</p>
       <div className="mt-5 space-y-3">{levels.map(level => <button key={level.level} onClick={() => setSelected(level.level)} className={`w-full rounded-3xl border p-4 text-left ${selected===level.level ? "border-cyan-300/50 bg-cyan-400/10" : "border-white/10 bg-white/[.035]"}`}>
-        <div className="flex items-center justify-between gap-3"><div><p className="font-bold">{level.name}</p><p className="mt-1 text-xs text-slate-500">Activation option</p></div><p className="font-black text-cyan-300">₦{Number(level.activation_fee).toLocaleString()}</p></div>
+        <div className="flex items-center justify-between gap-3"><div><p className="font-bold">{level.name}</p><p className="mt-1 text-xs text-slate-400">{level.daily_earning_cap ? `Earn up to ${Number(level.daily_earning_cap).toLocaleString()} per day` : "Activation plan"}</p></div><p className="font-black text-cyan-300">₦{Number(level.activation_fee).toLocaleString()}</p></div>
       </button>)}</div>
       <input value={email} onChange={e=>setEmail(e.target.value)} className="field mt-4" placeholder="Email for payment receipt" type="email" autoComplete="email" />
       {message && <p className="mt-3 rounded-2xl bg-rose-400/10 p-3 text-xs leading-5 text-rose-200">{message}</p>}
