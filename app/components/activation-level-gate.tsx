@@ -38,9 +38,19 @@ export default function ActivationLevelGate() {
         setLoading(false);
       }
     };
-    const handler = () => { void open(); };
-    window.addEventListener("viewcash:open-activation", handler);
-    return () => window.removeEventListener("viewcash:open-activation", handler);
+
+    const clickHandler = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest("button");
+      if (!button) return;
+      if (button.textContent?.trim() !== "Activate Account") return;
+      event.preventDefault();
+      event.stopPropagation();
+      void open();
+    };
+
+    document.addEventListener("click", clickHandler, true);
+    return () => document.removeEventListener("click", clickHandler, true);
   }, []);
 
   const close = () => {
