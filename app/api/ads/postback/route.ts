@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
 const MONETAG_ZONE_ID = "11801942";
 const SESSION_TTL_MINUTES = 15;
+const MINIMUM_VIEW_SECONDS = 15;
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,9 +39,19 @@ export async function GET(req: NextRequest) {
     if (session.zone_id && session.zone_id !== MONETAG_ZONE_ID) return new NextResponse("ignored", { status: 200 });
 
     const startedAt = new Date(session.started_at).getTime();
-    if (!Number.isFinite(startedAt) || Date.now() - startedAt > SESSION_TTL_MINUTES * 60 * 1000) {
+    const elapsedMs = Date.now() - startedAt;
+    if (!Number.isFinite(startedAt) || elapsedMs > SESSION_TTL_MINUTES * 60 * 1000) {
       await db.from("ad_sessions").update({ status: "expired", completed_at: new Date().toISOString() }).eq("id", session.id).eq("status", "started");
       return new NextResponse("expired", { status: 200 });
+    }
+
+    // Monetag can report a valued impression when the ad is closed. Never
+    // credit that event unless the ViewCash ad session has been active for
+    // the full required 15 seconds. Return a non-2xx response for an early
+    // callback so the provider can retry the postback instead of losing the
+    // reward permanently.
+    if (elapsedMs < MINIMUM_VIEW_SECONDS * 1000) {
+      return new NextResponse("ad_view_too_short", { status: 409 });
     }
 
     const { data: user, error: userError } = await db
