@@ -43,11 +43,23 @@ export async function GET(req: NextRequest) {
     const supabase = db();
     const { data: user } = await supabase.from("users").select("id,activated,status").eq("telegram_id", tgUser.id).single();
     if (!user) return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
-    if (!user.activated) return NextResponse.json({ error: "ACCOUNT_ACTIVATION_REQUIRED", activated: false, tasks: [] }, { status: 403 });
+    if (!user.activated) return NextResponse.json({ error: "ACCOUNT_ACTIVATION_REQUIRED", activated: false, tasks: [], pendingTasks: [], approvedTasks: [], rejectedTasks: [] }, { status: 403 });
     if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ACTIVE" }, { status: 403 });
-    const { data, error } = await supabase.from("tasks").select("id,title,description,reward,task_type,action_url,daily_limit,completion_limit,completed_count,proof_required,verification_type,telegram_chat").eq("status","active").order("created_at", { ascending: false });
-    if (error) throw error;
-    return NextResponse.json({ tasks: data || [], activated: true });
+
+    const [{ data: taskData, error: taskError }, { data: completionData, error: completionError }] = await Promise.all([
+      supabase.from("tasks").select("id,title,description,reward,task_type,action_url,daily_limit,completion_limit,completed_count,proof_required,verification_type,telegram_chat").eq("status","active").order("created_at", { ascending: false }),
+      supabase.from("task_completions").select("id,task_id,status,proof_url,created_at,reviewed_at,tasks(id,title,description,reward,task_type,action_url,daily_limit,completion_limit,completed_count,proof_required,verification_type,telegram_chat)").eq("user_id", user.id).order("created_at", { ascending: false })
+    ]);
+    if (taskError || completionError) throw taskError || completionError;
+
+    const completions = completionData || [];
+    const blockedIds = new Set(completions.filter((c:any) => c.status === "pending" || c.status === "approved").map((c:any) => c.task_id));
+    const activeTasks = (taskData || []).filter((t:any) => !blockedIds.has(t.id));
+    const pendingTasks = completions.filter((c:any) => c.status === "pending");
+    const approvedTasks = completions.filter((c:any) => c.status === "approved");
+    const rejectedTasks = completions.filter((c:any) => c.status === "rejected");
+
+    return NextResponse.json({ tasks: activeTasks, pendingTasks, approvedTasks, rejectedTasks, activated: true });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "TASKS_UNAVAILABLE" }, { status: 500 });
   }
@@ -72,6 +84,7 @@ export async function POST(req: NextRequest) {
     if (!fraud.allowed) return NextResponse.json({ error: fraud.error }, { status: 429 });
     const { data: task, error: taskError } = await supabase.from("tasks").select("id,title,task_type,verification_type,telegram_chat,action_url,proof_required").eq("id", taskId).single();
     if (taskError || !task) return NextResponse.json({ error: "TASK_NOT_FOUND" }, { status: 404 });
+
     if (task.verification_type === "telegram" || task.task_type === "telegram") {
       const chat = task.telegram_chat || task.action_url;
       if (!chat) return NextResponse.json({ error: "TELEGRAM_TASK_NOT_CONFIGURED" }, { status: 400 });
@@ -79,15 +92,16 @@ export async function POST(req: NextRequest) {
       if (!member) return NextResponse.json({ error: "TELEGRAM_MEMBERSHIP_NOT_FOUND" }, { status: 400 });
       const { data, error } = await supabase.rpc("complete_verified_task", { p_task_id: task.id, p_user_id: user.id, p_proof_url: null });
       if (error) throw error;
-      if (!data?.ok) return NextResponse.json({ error: data?.error || "TASK_NOT_COMPLETED" }, { status: 400 });
+      if (!data?.ok) return NextResponse.json({ error: data?.error || "TASK_NOT_COMPLETED", status: data?.status }, { status: 400 });
       return NextResponse.json(data);
     }
+
     if (!task.proof_required) return NextResponse.json({ error: "VERIFICATION_NOT_AVAILABLE" }, { status: 400 });
     if (!proofUrl || !/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(proofUrl)) return NextResponse.json({ error: "PROOF_SCREENSHOT_REQUIRED" }, { status: 400 });
     if (proofUrl.length > 2500000) return NextResponse.json({ error: "PROOF_SCREENSHOT_TOO_LARGE" }, { status: 413 });
     const { data, error } = await supabase.rpc("complete_verified_task", { p_task_id: task.id, p_user_id: user.id, p_proof_url: proofUrl });
     if (error) throw error;
-    if (!data?.ok) return NextResponse.json({ error: data?.error || "TASK_NOT_COMPLETED" }, { status: 400 });
+    if (!data?.ok) return NextResponse.json({ error: data?.error || "TASK_NOT_COMPLETED", status: data?.status }, { status: 400 });
     return NextResponse.json(data);
   } catch (error) {
     console.error("ViewCash task verification error", error);
