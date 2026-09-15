@@ -8,7 +8,7 @@ export async function GET(_req: NextRequest) {
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!key) return NextResponse.json({ error: "SERVER_CONFIG_ERROR" }, { status: 500 });
     const db = createClient(SUPABASE_URL, key, { auth: { autoRefreshToken: false, persistSession: false } });
-    const { data, error } = await db.from("activation_levels").select("level,name,activation_fee,daily_earning_cap").eq("active", true).order("level", { ascending: true });
+    const { data, error } = await db.from("activation_levels").select("level,name,activation_fee,daily_earning_cap,task_min_withdrawal,affiliate_min_withdrawal").eq("active", true).order("level", { ascending: true });
     if (error) throw error;
     return NextResponse.json({ levels: data || [] }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
