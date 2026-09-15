@@ -19,7 +19,7 @@ export default function MonetagWatch({ initData }: { initData: string }) {
   const [message, setMessage] = useState("");
   const watchActiveRef = useRef(false);
   const backGuardRef = useRef(false);
-  const activeSessionRef = useRef<{ requestVar: string; ymid: string } | null>(null);
+  const activeSessionRef = useRef<{ sessionId: string; requestVar: string; ymid: string } | null>(null);
   const watchStartedAtRef = useRef(0);
   const zone = process.env.NEXT_PUBLIC_MONETAG_ZONE_ID?.trim() || DEFAULT_MONETAG_ZONE;
 
@@ -64,9 +64,6 @@ export default function MonetagWatch({ initData }: { initData: string }) {
     }).catch(() => null);
   };
 
-  // Keep the user on the Watch Ad page while an ad is running. Back before
-  // completion cancels the active session, so a later provider retry cannot
-  // credit the unfinished view.
   useEffect(() => {
     const handleBack = () => {
       if (!watchActiveRef.current) return;
@@ -84,22 +81,23 @@ export default function MonetagWatch({ initData }: { initData: string }) {
     return () => window.removeEventListener("popstate", handleBack);
   }, [initData]);
 
-  // Confirmation is deliberately non-blocking. Monetag's server callback can
-  // arrive later; users should not have to wait before watching another ad.
-  const confirmInBackground = (requestVar: string, ymid: string) => {
-    void (async () => {
-      for (let attempt = 0; attempt < 12; attempt++) {
-        await new Promise(resolve => window.setTimeout(resolve, attempt === 0 ? 500 : 1000));
-        const r = await fetch("/api/ads/status", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ initData, request_var: requestVar, ymid }),
-          cache: "no-store",
-        }).catch(() => null);
-        const d = await r?.json().catch(() => ({}));
-        if (r?.ok && d?.confirmed) return;
-      }
-    })();
+  const creditImmediately = async (session: { sessionId: string; requestVar: string; ymid: string }) => {
+    const response = await fetch("/api/ads/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        initData,
+        session_id: session.sessionId,
+        request_var: session.requestVar,
+        ymid: session.ymid,
+      }),
+      cache: "no-store",
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.ok) {
+      throw new Error(data?.error || "Your reward could not be credited yet.");
+    }
+    return Number(data.reward_coins || 0);
   };
 
   const watch = async () => {
@@ -107,13 +105,13 @@ export default function MonetagWatch({ initData }: { initData: string }) {
     if (!zone) return setMessage("Ads are being configured.");
     const show = window[`show_${zone}`];
     if (!show) return setMessage("Ad is not ready yet. Please try again.");
+
     setBusy(true);
     watchActiveRef.current = true;
     watchStartedAtRef.current = Date.now();
-    // Add a same-page history entry so the phone Back action can be consumed
-    // while the rewarded ad is active.
     window.history.pushState({ viewcashAdGuard: true }, "", window.location.href);
     setMessage("");
+
     try {
       const sessionResponse = await fetch("/api/ads/start", {
         method: "POST",
@@ -123,7 +121,12 @@ export default function MonetagWatch({ initData }: { initData: string }) {
       });
       const session = await sessionResponse.json().catch(() => ({}));
       if (!sessionResponse.ok) throw new Error(session.error || "Unable to start ad.");
-      activeSessionRef.current = { requestVar: session.request_var, ymid: session.ymid };
+
+      activeSessionRef.current = {
+        sessionId: session.session_id,
+        requestVar: session.request_var,
+        ymid: session.ymid,
+      };
 
       const result = await show({
         type: "end",
@@ -139,20 +142,26 @@ export default function MonetagWatch({ initData }: { initData: string }) {
         return;
       }
 
-      activeSessionRef.current = null;
-      // The user has completed the required 15 seconds. Do not block the
-      // Watch Ad button while Monetag's postback confirmation is pending.
-      setMessage("Ad completed.");
-      if (result?.reward_event_type === "valued") {
-        confirmInBackground(session.request_var, session.ymid);
+      const completedSession = activeSessionRef.current;
+      if (!completedSession) {
+        setMessage("Ad completed, but the session was cancelled.");
+        return;
       }
+
+      // The server independently checks the session age (15 seconds), active
+      // account and exact session identifiers before crediting. This removes
+      // the old dependency on Monetag's delayed valued-impression callback.
+      const rewardCoins = await creditImmediately(completedSession);
+      activeSessionRef.current = null;
+      setMessage(rewardCoins > 0 ? `Reward added: ${rewardCoins} coins.` : "Ad completed. Reward already credited.");
+      window.dispatchEvent(new CustomEvent("viewcash:wallet-updated"));
+      void result;
     } catch (error) {
       await cancelActiveSession();
       setMessage(error instanceof Error ? error.message : "The ad could not be completed.");
     } finally {
       watchActiveRef.current = false;
       setBusy(false);
-      // Remove the guard history entry without navigating away from the page.
       if (window.history.state?.viewcashAdGuard) {
         window.history.back();
       }
