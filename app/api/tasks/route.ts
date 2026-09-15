@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null);
     const taskId = String(body?.task_id || "");
     const initData = String(body?.initData || "");
+    const proofUrl = body?.proof_url ? String(body.proof_url).trim() : null;
     if (!taskId || !initData) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
     const token = process.env.TELEGRAM_BOT_TOKEN;
     if (!token) throw new Error("SERVER_CONFIG_ERROR");
@@ -81,7 +82,12 @@ export async function POST(req: NextRequest) {
       if (!data?.ok) return NextResponse.json({ error: data?.error || "TASK_NOT_COMPLETED" }, { status: 400 });
       return NextResponse.json(data);
     }
-    return NextResponse.json({ error: task.proof_required ? "PROOF_REQUIRED" : "VERIFICATION_NOT_AVAILABLE" }, { status: 400 });
+    if (!task.proof_required) return NextResponse.json({ error: "VERIFICATION_NOT_AVAILABLE" }, { status: 400 });
+    if (!proofUrl || !/^https?:\/\//i.test(proofUrl)) return NextResponse.json({ error: "PROOF_REQUIRED" }, { status: 400 });
+    const { data, error } = await supabase.rpc("complete_verified_task", { p_task_id: task.id, p_user_id: user.id, p_proof_url: proofUrl });
+    if (error) throw error;
+    if (!data?.ok) return NextResponse.json({ error: data?.error || "TASK_NOT_COMPLETED" }, { status: 400 });
+    return NextResponse.json(data);
   } catch (error) {
     console.error("ViewCash task verification error", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "TASK_VERIFICATION_FAILED" }, { status: 500 });
