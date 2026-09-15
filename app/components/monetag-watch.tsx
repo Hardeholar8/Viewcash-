@@ -82,14 +82,11 @@ export default function MonetagWatch({ initData }: { initData: string }) {
   };
 
   return (
-    <div className="mt-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">REWARDED AD</p>
-      <h3 className="mt-1 text-lg font-bold">Watch an ad and earn coins</h3>
-      <p className="mt-1.5 text-sm leading-5 text-slate-400">Rewards are added only after ViewCash receives a valid Monetag confirmation.</p>
-      <button onClick={watch} disabled={busy || !ready} className="mt-4 w-full rounded-xl bg-cyan-400 py-3 text-sm font-bold text-slate-950 disabled:opacity-50">
+    <div className="mt-3">
+      <button onClick={watch} disabled={busy || !ready} className="w-full rounded-2xl bg-cyan-400 py-3.5 text-sm font-extrabold text-slate-950 shadow-[0_10px_30px_rgba(34,211,238,0.12)] disabled:opacity-50">
         {busy ? "Loading ad..." : !zone ? "Ads being configured" : !ready ? "Loading ad..." : "Watch Ad"}
       </button>
-      {message && <p className="mt-3 text-xs leading-5 text-cyan-200">{message}</p>}
+      {message && <p className="mt-3 rounded-2xl bg-white/[.03] px-3 py-2.5 text-xs leading-5 text-slate-400">{message}</p>}
     </div>
   );
 }
