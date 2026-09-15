@@ -85,18 +85,11 @@ export default function MonetagWatch({ initData }: { initData: string }) {
     const response = await fetch("/api/ads/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        initData,
-        session_id: session.sessionId,
-        request_var: session.requestVar,
-        ymid: session.ymid,
-      }),
+      body: JSON.stringify({ initData, session_id: session.sessionId, request_var: session.requestVar, ymid: session.ymid }),
       cache: "no-store",
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data?.ok) {
-      throw new Error(data?.error || "Your reward could not be credited yet.");
-    }
+    if (!response.ok || !data?.ok) throw new Error(data?.error || "Your reward could not be credited yet.");
     return Number(data.reward_coins || 0);
   };
 
@@ -122,23 +115,19 @@ export default function MonetagWatch({ initData }: { initData: string }) {
       const session = await sessionResponse.json().catch(() => ({}));
       if (!sessionResponse.ok) throw new Error(session.error || "Unable to start ad.");
 
-      activeSessionRef.current = {
-        sessionId: session.session_id,
-        requestVar: session.request_var,
-        ymid: session.ymid,
-      };
-
-      const result = await show({
-        type: "end",
-        ymid: session.ymid,
-        requestVar: session.request_var,
-        catchIfNoFeed: true,
-      });
-
+      activeSessionRef.current = { sessionId: session.session_id, requestVar: session.request_var, ymid: session.ymid };
+      const result = await show({ type: "end", ymid: session.ymid, requestVar: session.request_var, catchIfNoFeed: true });
       const elapsedSeconds = (Date.now() - watchStartedAtRef.current) / 1000;
+
       if (elapsedSeconds < REQUIRED_VIEW_SECONDS) {
         await cancelActiveSession();
         setMessage("Ad was not completed. Watch the full 15 seconds to receive your reward.");
+        return;
+      }
+
+      if (String(result?.reward_event_type || "").toLowerCase() !== "valued") {
+        await cancelActiveSession();
+        setMessage("Ad completed, but Monetag did not confirm a reward for this view.");
         return;
       }
 
@@ -152,16 +141,13 @@ export default function MonetagWatch({ initData }: { initData: string }) {
       activeSessionRef.current = null;
       setMessage(rewardCoins > 0 ? `Reward added: ${rewardCoins} coins.` : "Ad completed. Reward already credited.");
       window.dispatchEvent(new CustomEvent("viewcash:wallet-updated"));
-      void result;
     } catch (error) {
       await cancelActiveSession();
       setMessage(error instanceof Error ? error.message : "The ad could not be completed.");
     } finally {
       watchActiveRef.current = false;
       setBusy(false);
-      if (window.history.state?.viewcashAdGuard) {
-        window.history.back();
-      }
+      if (window.history.state?.viewcashAdGuard) window.history.back();
     }
   };
 
