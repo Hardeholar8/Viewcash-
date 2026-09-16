@@ -21,6 +21,27 @@ function db(req: NextRequest) {
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
+function telegramChatValue(actionUrl: string | null, supplied: unknown) {
+  const explicit = String(supplied ?? "").trim();
+  if (explicit) return explicit;
+  const value = String(actionUrl || "").trim();
+  if (!value) return null;
+  if (/^https?:\/\/t\.me\/\+/.test(value) || /^https?:\/\/t\.me\/joinchat\//.test(value)) return null;
+  const match = value.match(/^(?:https?:\/\/)?(?:www\.)?t\.me\/([A-Za-z0-9_]{4,})\/?(?:\?.*)?$/i);
+  if (match) return `@${match[1]}`;
+  if (/^@[A-Za-z0-9_]{4,}$/.test(value) || /^-?\d+$/.test(value)) return value;
+  return null;
+}
+
+function validateTelegramConfig(actionUrl: string | null, chat: string | null) {
+  if (!actionUrl) return "TELEGRAM_URL_REQUIRED";
+  const invite = /^https?:\/\/t\.me\/\+|^https?:\/\/t\.me\/joinchat\//i.test(actionUrl.trim());
+  if (invite && !chat) return "TELEGRAM_PRIVATE_CHAT_ID_REQUIRED";
+  if (!chat) return "TELEGRAM_CHAT_REQUIRED";
+  if (!/^@[A-Za-z0-9_]{4,}$/.test(chat) && !/^-?\d+$/.test(chat)) return "INVALID_TELEGRAM_CHAT_ID";
+  return null;
+}
+
 export async function GET(req: NextRequest) {
   const supabase = db(req);
   if (!supabase) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
@@ -43,7 +64,9 @@ export async function POST(req: NextRequest) {
   const status = body?.status === "inactive" ? "inactive" : "active";
   if (!title || !Number.isFinite(reward) || reward < 0 || (dailyLimit !== null && (!Number.isInteger(dailyLimit) || dailyLimit < 1)) || (completionLimit !== null && (!Number.isInteger(completionLimit) || completionLimit < 1))) return NextResponse.json({ error: "INVALID_TASK" }, { status: 400 });
   const telegram = taskType === "telegram";
-  const { data, error } = await supabase.from("tasks").insert({ title, description, reward, task_type: taskType, action_url: actionUrl, daily_limit: dailyLimit, completion_limit: completionLimit, status, proof_required: !telegram, verification_type: telegram ? "telegram" : "manual", telegram_chat: telegram ? actionUrl : null }).select().single();
+  const chat = telegram ? telegramChatValue(actionUrl, body?.telegram_chat) : null;
+  if (telegram) { const configError = validateTelegramConfig(actionUrl, chat); if (configError) return NextResponse.json({ error: configError }, { status: 400 }); }
+  const { data, error } = await supabase.from("tasks").insert({ title, description, reward, task_type: taskType, action_url: actionUrl, daily_limit: dailyLimit, completion_limit: completionLimit, status, proof_required: !telegram, verification_type: telegram ? "telegram" : "manual", telegram_chat: chat }).select().single();
   if (error) return NextResponse.json({ error: "ADMIN_TASK_CREATE_ERROR" }, { status: 500 });
   return NextResponse.json({ task: data });
 }
@@ -57,7 +80,33 @@ export async function PATCH(req: NextRequest) {
   const updates: Record<string, unknown> = {};
   for (const key of ["title", "description", "task_type", "action_url", "status"]) if (body?.[key] !== undefined) updates[key] = body[key] === null ? null : String(body[key]).trim();
   for (const key of ["reward", "daily_limit", "completion_limit"]) if (body?.[key] !== undefined) updates[key] = body[key] === null || body[key] === "" ? null : Number(body[key]);
-  if (updates.task_type !== undefined) { const telegram = updates.task_type === "telegram"; updates.verification_type = telegram ? "telegram" : "manual"; updates.proof_required = !telegram; if (telegram && updates.action_url !== undefined) updates.telegram_chat = updates.action_url; }
+  if (updates.task_type !== undefined) {
+    const telegram = updates.task_type === "telegram";
+    updates.verification_type = telegram ? "telegram" : "manual";
+    updates.proof_required = !telegram;
+    if (telegram) {
+      const actionUrl = updates.action_url !== undefined ? String(updates.action_url || "").trim() : null;
+      const chat = telegramChatValue(actionUrl, body?.telegram_chat);
+      const configError = validateTelegramConfig(actionUrl, chat);
+      if (configError) return NextResponse.json({ error: configError }, { status: 400 });
+      updates.telegram_chat = chat;
+    } else updates.telegram_chat = null;
+  } else if (body?.telegram_chat !== undefined) {
+    const actionUrl = updates.action_url !== undefined ? String(updates.action_url || "").trim() : null;
+    const chat = telegramChatValue(actionUrl, body.telegram_chat);
+    const configError = validateTelegramConfig(actionUrl, chat);
+    if (configError) return NextResponse.json({ error: configError }, { status: 400 });
+    updates.telegram_chat = chat;
+  } else if (updates.action_url !== undefined) {
+    const current = await supabase.from("tasks").select("task_type,telegram_chat").eq("id", id).single();
+    if (current.error) return NextResponse.json({ error: "ADMIN_TASK_UPDATE_ERROR" }, { status: 500 });
+    if (current.data?.task_type === "telegram") {
+      const chat = telegramChatValue(String(updates.action_url || "").trim(), current.data.telegram_chat);
+      const configError = validateTelegramConfig(String(updates.action_url || "").trim(), chat);
+      if (configError) return NextResponse.json({ error: configError }, { status: 400 });
+      updates.telegram_chat = chat;
+    }
+  }
   if (updates.title !== undefined && !updates.title) return NextResponse.json({ error: "INVALID_TASK" }, { status: 400 });
   if (updates.reward !== undefined && (updates.reward === null || !Number.isFinite(Number(updates.reward)) || Number(updates.reward) < 0)) return NextResponse.json({ error: "INVALID_TASK" }, { status: 400 });
   for (const key of ["daily_limit", "completion_limit"]) if (updates[key] !== undefined && updates[key] !== null && (!Number.isInteger(Number(updates[key])) || Number(updates[key]) < 1)) return NextResponse.json({ error: "INVALID_TASK" }, { status: 400 });
