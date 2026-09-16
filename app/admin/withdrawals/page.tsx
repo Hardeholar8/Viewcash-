@@ -1,13 +1,287 @@
 "use client";
-import { useEffect,useState } from "react";
-type TelegramWebApp={initData:string;ready:()=>void;expand:()=>void};declare global{interface Window{Telegram?:{WebApp?:TelegramWebApp}}}
-type Withdrawal={id:string;amount:number;coin_amount:number|null;balance_type:string|null;bank_name:string;account_name:string;account_number:string;status:string;admin_note:string|null;created_at:string;processed_at:string|null;users?:{username?:string;first_name?:string}|null};
-const labels:Record<string,string>={pending:"PENDING",approved:"APPROVED",paid:"PAID",rejected:"REJECTED",cancelled:"CANCELLED"};
-export default function WithdrawalsPage(){
- const[authorized,setAuthorized]=useState(false),[message,setMessage]=useState("Checking admin access..."),[section,setSection]=useState<"pending"|"completed">("pending"),[rows,setRows]=useState<Withdrawal[]>([]),[notes,setNotes]=useState<Record<string,string>>({}),[busy,setBusy]=useState<string|null>(null),[error,setError]=useState("");
- useEffect(()=>{(async()=>{const w=window.Telegram?.WebApp;if(!w?.initData){setMessage("Open this page from Telegram.");return}w.ready();w.expand();const r=await fetch("/api/admin/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({initData:w.initData}),cache:"no-store"});if(!r.ok){setMessage("Admin access denied.");return}setAuthorized(true)})().catch(()=>setMessage("Unable to verify admin access."))},[]);
- const load=async()=>{setError("");const r=await fetch(`/api/admin/withdrawals?status=${section}`,{cache:"no-store"});const d=await r.json().catch(()=>({}));if(r.ok)setRows(d.withdrawals||[]);else setError("Unable to load withdrawals.")};useEffect(()=>{if(authorized)load()},[authorized,section]);
- const update=async(id:string,next:string)=>{setBusy(id);setError("");const r=await fetch("/api/admin/withdrawals",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status:next,admin_note:notes[id]||null})});const d=await r.json().catch(()=>({}));if(!r.ok)setError(d.error||"Unable to update withdrawal");await load();setBusy(null)};
- if(!authorized)return <main className="flex min-h-screen items-center justify-center bg-[#080d18] px-6 text-center text-white"><div><h1 className="text-3xl font-extrabold">View<span className="text-cyan-400">Cash</span></h1><p className="mt-3 text-slate-400">{message}</p></div></main>;
- return <main className="min-h-screen bg-[#080d18] p-5 text-white"><div className="mx-auto max-w-2xl"><div className="mb-6 flex items-start gap-3"><button onClick={()=>window.location.href="/admin"} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300">← Back</button><div><h1 className="text-2xl font-extrabold">Withdrawals</h1><p className="mt-1 text-sm text-slate-500">Pending requests leave this section immediately after an action.</p></div></div><div className="mb-5 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[.03] p-1"><button onClick={()=>setSection("pending")} className={`rounded-xl py-3 text-sm font-bold ${section==="pending"?"bg-cyan-400 text-slate-950":"text-slate-400"}`}>Pending</button><button onClick={()=>setSection("completed")} className={`rounded-xl py-3 text-sm font-bold ${section==="completed"?"bg-cyan-400 text-slate-950":"text-slate-400"}`}>Completed</button></div>{error&&<p className="mb-4 rounded-xl border border-red-400/20 bg-red-400/5 p-3 text-sm text-red-300">{error}</p>}<div className="space-y-4">{rows.map(w=>{const u=w.users;return <div key={w.id} className="rounded-3xl border border-white/10 bg-white/[.035] p-5"><div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold">₦{Number(w.amount).toFixed(2)}</h2><p className="mt-1 text-sm text-slate-400">{u?.username?`@${u.username}`:u?.first_name||"User"}</p></div><span className={`rounded-full px-3 py-1.5 text-[11px] font-extrabold ${w.status==="rejected"?"bg-red-400/15 text-red-300":w.status==="paid"?"bg-emerald-400/15 text-emerald-300":w.status==="approved"?"bg-cyan-400/15 text-cyan-300":"bg-white/5 text-slate-300"}`}>{labels[w.status]||w.status.toUpperCase()}</span></div><div className="mt-4 rounded-2xl border border-cyan-400/10 bg-cyan-400/5 p-3 text-sm"><p><span className="text-slate-500">Wallet:</span> {w.balance_type==="referral"?"Affiliate Wallet":"Task Wallet"}</p><p className="mt-1"><span className="text-slate-500">Coins:</span> {w.coin_amount==null?"—":Number(w.coin_amount).toLocaleString()}</p></div><div className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-300/[.04] p-4 text-sm"><p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-amber-300">Payment destination</p><p>Bank: <strong>{w.bank_name}</strong></p><p>Account name: <strong>{w.account_name}</strong></p><p>Account number: <strong className="font-mono">{w.account_number}</strong></p></div><div className="mt-4 space-y-1 text-sm text-slate-300"><p><span className="text-slate-500">Requested:</span> {new Date(w.created_at).toLocaleString()}</p>{w.processed_at&&<p><span className="text-slate-500">Processed:</span> {new Date(w.processed_at).toLocaleString()}</p>}{w.admin_note&&<p><span className="text-slate-500">Admin note:</span> {w.admin_note}</p>}</div>{w.status==="pending"&&<><textarea value={notes[w.id]||""} onChange={e=>setNotes(x=>({...x,[w.id]:e.target.value}))} className="mt-4 min-h-20 w-full rounded-2xl border border-white/10 bg-black/20 p-3 text-sm outline-none" placeholder="Admin note (optional)"/><div className="mt-4 grid grid-cols-2 gap-2"><button disabled={busy===w.id} onClick={()=>update(w.id,"approved")} className="rounded-xl bg-cyan-400 py-3 font-bold text-slate-950">Approve</button><button disabled={busy===w.id} onClick={()=>update(w.id,"rejected")} className="rounded-xl border border-red-400/20 py-3 font-bold text-red-300">Reject</button></div></>}{w.status==="approved"&&<><textarea value={notes[w.id]||w.admin_note||""} onChange={e=>setNotes(x=>({...x,[w.id]:e.target.value}))} className="mt-4 min-h-20 w-full rounded-2xl border border-white/10 bg-black/20 p-3 text-sm outline-none" placeholder="Payment note (optional)"/><div className="mt-4 rounded-2xl border border-cyan-300/15 bg-cyan-400/[.05] p-3 text-xs text-slate-300">Approved request. Send the amount to the account above, then mark it paid.</div><button disabled={busy===w.id} onClick={()=>update(w.id,"paid")} className="mt-3 w-full rounded-xl bg-emerald-400 py-3 font-bold text-slate-950">Mark as Paid</button></>}</div>})}{rows.length===0&&<div className="rounded-3xl border border-white/10 bg-white/[.035] p-6 text-sm text-slate-500">No {section} withdrawals.</div>}</div></div></main>;
+
+import { useEffect, useMemo, useState } from "react";
+
+type TelegramWebApp = {
+  initData: string;
+  ready: () => void;
+  expand: () => void;
+};
+
+declare global {
+  interface Window {
+    Telegram?: { WebApp?: TelegramWebApp };
+  }
+}
+
+type Withdrawal = {
+  id: string;
+  amount: number;
+  coin_amount: number | null;
+  balance_type: string | null;
+  bank_name: string;
+  account_name: string;
+  account_number: string;
+  status: string;
+  admin_note: string | null;
+  created_at: string;
+  processed_at: string | null;
+  users?: { username?: string; first_name?: string } | null;
+};
+
+const completedStatuses = ["approved", "paid", "rejected", "cancelled"];
+const labels: Record<string, string> = {
+  pending: "PENDING",
+  approved: "APPROVED",
+  paid: "PAID",
+  rejected: "REJECTED",
+  cancelled: "CANCELLED",
+};
+
+function statusClass(status: string) {
+  if (status === "paid") return "bg-emerald-400/15 text-emerald-300 border-emerald-400/20";
+  if (status === "approved") return "bg-cyan-400/15 text-cyan-300 border-cyan-400/20";
+  if (status === "rejected") return "bg-red-400/15 text-red-300 border-red-400/20";
+  if (status === "cancelled") return "bg-amber-400/15 text-amber-300 border-amber-400/20";
+  return "bg-white/5 text-slate-300 border-white/10";
+}
+
+export default function WithdrawalsPage() {
+  const [authorized, setAuthorized] = useState(false);
+  const [message, setMessage] = useState("Checking admin access...");
+  const [section, setSection] = useState<"pending" | "completed">("pending");
+  const [rows, setRows] = useState<Withdrawal[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const webApp = window.Telegram?.WebApp;
+      if (!webApp?.initData) {
+        setMessage("Open this page from Telegram.");
+        return;
+      }
+      webApp.ready();
+      webApp.expand();
+      const response = await fetch("/api/admin/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initData: webApp.initData }),
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        setMessage("Admin access denied.");
+        return;
+      }
+      setAuthorized(true);
+    })().catch(() => setMessage("Unable to verify admin access."));
+  }, []);
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [currentResponse, pendingResponse, completedResponse] = await Promise.all([
+        fetch(`/api/admin/withdrawals?status=${section}`, { cache: "no-store" }),
+        fetch("/api/admin/withdrawals?status=pending", { cache: "no-store" }),
+        fetch("/api/admin/withdrawals?status=completed", { cache: "no-store" }),
+      ]);
+
+      const currentData = await currentResponse.json().catch(() => ({}));
+      const pendingData = await pendingResponse.json().catch(() => ({}));
+      const completedData = await completedResponse.json().catch(() => ({}));
+
+      if (!currentResponse.ok) throw new Error("Unable to load withdrawals.");
+
+      setRows(currentData.withdrawals || []);
+      setPendingCount((pendingData.withdrawals || []).length);
+      setCompletedCount((completedData.withdrawals || []).length);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to load withdrawals.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authorized) load();
+  }, [authorized, section]);
+
+  const update = async (id: string, next: string) => {
+    setBusy(id);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/withdrawals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: next, admin_note: notes[id] || null }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to update withdrawal.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to update withdrawal.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const heading = useMemo(
+    () => (section === "pending" ? "Pending withdrawals" : "Completed withdrawals"),
+    [section]
+  );
+
+  if (!authorized) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#080d18] px-6 text-center text-white">
+        <div>
+          <h1 className="text-3xl font-extrabold">View<span className="text-cyan-400">Cash</span></h1>
+          <p className="mt-3 text-slate-400">{message}</p>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-[#080d18] p-4 text-white sm:p-6">
+      <div className="mx-auto max-w-3xl">
+        <header className="mb-6 flex items-start gap-3">
+          <button
+            onClick={() => (window.location.href = "/admin")}
+            className="rounded-xl border border-white/10 bg-white/[.03] px-3 py-2 text-sm text-slate-300"
+          >
+            ← Back
+          </button>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[.2em] text-cyan-400">Admin control center</p>
+            <h1 className="mt-1 text-2xl font-extrabold">Withdrawals</h1>
+            <p className="mt-1 text-sm text-slate-500">Review pending requests and keep a separate completed history.</p>
+          </div>
+        </header>
+
+        <section className="mb-6 rounded-3xl border border-white/10 bg-white/[.035] p-2 shadow-2xl shadow-black/20">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setSection("pending")}
+              className={`rounded-2xl px-4 py-4 text-left transition ${section === "pending" ? "bg-cyan-400 text-slate-950" : "text-slate-400 hover:bg-white/[.04]"}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-extrabold">Pending</span>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-extrabold ${section === "pending" ? "bg-slate-950/10" : "bg-white/5 text-slate-300"}`}>{pendingCount}</span>
+              </div>
+              <p className={`mt-1 text-xs ${section === "pending" ? "text-slate-800/70" : "text-slate-600"}`}>Needs action</p>
+            </button>
+            <button
+              onClick={() => setSection("completed")}
+              className={`rounded-2xl px-4 py-4 text-left transition ${section === "completed" ? "bg-cyan-400 text-slate-950" : "text-slate-400 hover:bg-white/[.04]"}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-extrabold">Completed</span>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-extrabold ${section === "completed" ? "bg-slate-950/10" : "bg-white/5 text-slate-300"}`}>{completedCount}</span>
+              </div>
+              <p className={`mt-1 text-xs ${section === "completed" ? "text-slate-800/70" : "text-slate-600"}`}>Processed history</p>
+            </button>
+          </div>
+        </section>
+
+        {error && <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-300">{error}</div>}
+
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold">{heading}</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              {section === "pending" ? "Only requests awaiting an admin decision appear here." : "Approved, paid, rejected and cancelled requests appear here."}
+            </p>
+          </div>
+          <button onClick={load} disabled={loading} className="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-slate-300 disabled:opacity-50">
+            {loading ? "Loading..." : "Refresh"}
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {rows.map((w) => {
+            const user = w.users;
+            const isPending = w.status === "pending";
+            const isApproved = w.status === "approved";
+            return (
+              <article key={w.id} className="overflow-hidden rounded-3xl border border-white/10 bg-white/[.035] shadow-xl shadow-black/10">
+                <div className="border-b border-white/10 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Withdrawal request</p>
+                      <h3 className="mt-1 text-2xl font-extrabold">₦{Number(w.amount).toFixed(2)}</h3>
+                      <p className="mt-1 text-sm text-slate-400">{user?.username ? `@${user.username}` : user?.first_name || "User"}</p>
+                    </div>
+                    <span className={`rounded-full border px-3 py-1.5 text-[10px] font-extrabold tracking-wider ${statusClass(w.status)}`}>
+                      {labels[w.status] || w.status.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 p-5 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-cyan-400/10 bg-cyan-400/5 p-4 text-sm">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-cyan-300">Wallet</p>
+                    <p>{w.balance_type === "referral" ? "Affiliate Wallet" : "Task Wallet"}</p>
+                    <p className="mt-1 text-slate-400">Coins: {w.coin_amount == null ? "—" : Number(w.coin_amount).toLocaleString()}</p>
+                  </div>
+                  <div className="rounded-2xl border border-amber-300/10 bg-amber-300/[.04] p-4 text-sm">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-amber-300">Payment destination</p>
+                    <p>{w.bank_name}</p>
+                    <p className="mt-1">{w.account_name}</p>
+                    <p className="mt-1 font-mono text-slate-300">{w.account_number}</p>
+                  </div>
+                </div>
+
+                <div className="px-5 pb-5 text-xs text-slate-500">
+                  <p>Requested: {new Date(w.created_at).toLocaleString()}</p>
+                  {w.processed_at && <p className="mt-1">Processed: {new Date(w.processed_at).toLocaleString()}</p>}
+                  {w.admin_note && <p className="mt-1 text-slate-400">Admin note: {w.admin_note}</p>}
+                </div>
+
+                {isPending && (
+                  <div className="border-t border-white/10 bg-black/10 p-5">
+                    <textarea
+                      value={notes[w.id] || ""}
+                      onChange={(e) => setNotes((current) => ({ ...current, [w.id]: e.target.value }))}
+                      className="min-h-20 w-full rounded-2xl border border-white/10 bg-[#070b13] p-3 text-sm outline-none placeholder:text-slate-600"
+                      placeholder="Admin note (optional)"
+                    />
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button disabled={busy === w.id} onClick={() => update(w.id, "approved")} className="rounded-xl bg-cyan-400 py-3 font-bold text-slate-950 disabled:opacity-50">Approve</button>
+                      <button disabled={busy === w.id} onClick={() => update(w.id, "rejected")} className="rounded-xl border border-red-400/20 bg-red-400/5 py-3 font-bold text-red-300 disabled:opacity-50">Reject</button>
+                    </div>
+                  </div>
+                )}
+
+                {isApproved && (
+                  <div className="border-t border-white/10 bg-cyan-400/[.03] p-5">
+                    <textarea
+                      value={notes[w.id] || w.admin_note || ""}
+                      onChange={(e) => setNotes((current) => ({ ...current, [w.id]: e.target.value }))}
+                      className="min-h-20 w-full rounded-2xl border border-white/10 bg-[#070b13] p-3 text-sm outline-none placeholder:text-slate-600"
+                      placeholder="Payment note (optional)"
+                    />
+                    <p className="mt-3 rounded-xl border border-cyan-300/10 bg-cyan-400/5 p-3 text-xs text-slate-400">Approved request. Complete the transfer, then mark this withdrawal as paid.</p>
+                    <button disabled={busy === w.id} onClick={() => update(w.id, "paid")} className="mt-3 w-full rounded-xl bg-emerald-400 py-3 font-bold text-slate-950 disabled:opacity-50">Mark as Paid</button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+
+          {!loading && rows.length === 0 && (
+            <div className="rounded-3xl border border-dashed border-white/10 bg-white/[.02] p-10 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 text-xl">✓</div>
+              <h3 className="mt-4 font-bold">No {section} withdrawals</h3>
+              <p className="mt-1 text-sm text-slate-500">{section === "pending" ? "There are no withdrawal requests waiting for action." : "Processed withdrawal history will appear here."}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </main>
+  );
 }
