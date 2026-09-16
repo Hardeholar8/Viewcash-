@@ -8,6 +8,8 @@ type PopupData = {
   channel_url: string;
 };
 
+const SHOWN_KEY = "viewcash_community_popup_shown";
+
 export default function CommunityPopup() {
   const [data, setData] = useState<PopupData | null>(null);
   const [open, setOpen] = useState(false);
@@ -15,15 +17,23 @@ export default function CommunityPopup() {
   useEffect(() => {
     let cancelled = false;
 
+    // Show only once during the current login/app session. Navigation between
+    // pages must not trigger the popup again. A fresh session starts after the
+    // user logs in again.
+    try {
+      if (window.sessionStorage.getItem(SHOWN_KEY) === "1") return;
+    } catch {
+      // Continue if storage is unavailable.
+    }
+
     const load = async () => {
       try {
         const response = await fetch(`/api/community-popup?t=${Date.now()}`, {
           cache: "no-store",
           headers: { Accept: "application/json" },
         });
-        if (!response.ok) return;
+        if (!response.ok || cancelled) return;
         const result = (await response.json()) as Partial<PopupData>;
-        if (cancelled) return;
 
         const next: PopupData = {
           enabled: result.enabled === true,
@@ -32,6 +42,11 @@ export default function CommunityPopup() {
         };
 
         if (next.enabled && (next.group_url || next.channel_url)) {
+          try {
+            window.sessionStorage.setItem(SHOWN_KEY, "1");
+          } catch {
+            // Ignore storage errors; the popup can still be shown.
+          }
           setData(next);
           setOpen(true);
         }
@@ -40,7 +55,6 @@ export default function CommunityPopup() {
       }
     };
 
-    // Automatic community popup: settings are controlled only by the admin panel.
     const timer = window.setTimeout(load, 250);
     return () => {
       cancelled = true;
