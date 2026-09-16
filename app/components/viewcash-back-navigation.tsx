@@ -40,6 +40,22 @@ export default function ViewCashBackNavigation() {
       setCanGoBack(stack.current.length > 1);
     };
 
+    const clean = (value: string) => value.replace(/\s+/g, " ").trim();
+
+    // Referral from the Home quick-actions grid must be a real route.
+    // This capture handler runs before React's delegated click handler so it
+    // cannot be swallowed by the dashboard state navigation.
+    const onReferralClick = (event: MouseEvent) => {
+      if (window.location.pathname !== "/") return;
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest("button") as HTMLButtonElement | null;
+      if (!button || button.dataset.viewcashBack) return;
+      if (clean(button.innerText || button.textContent || "") !== "Referral") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      window.location.assign("/referral");
+    };
+
     const onClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
       const button = target?.closest("button") as HTMLButtonElement | null;
@@ -50,9 +66,14 @@ export default function ViewCashBackNavigation() {
 
     const observer = new MutationObserver(() => recordPage(pageFromHeading()));
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    document.addEventListener("click", onReferralClick, true);
     document.addEventListener("click", onClick, true);
     recordPage(pageFromHeading());
-    return () => { observer.disconnect(); document.removeEventListener("click", onClick, true); };
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("click", onReferralClick, true);
+      document.removeEventListener("click", onClick, true);
+    };
   }, []);
 
   const goBack = () => {
