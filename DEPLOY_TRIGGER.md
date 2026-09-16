@@ -1,0 +1,1 @@
+Deployment trigger for the latest ViewCash Telegram connection changes.
