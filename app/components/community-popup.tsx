@@ -40,7 +40,7 @@ export default function CommunityPopup() {
       }
     };
 
-    // Run after the Mini App has mounted so it also works reliably inside Telegram.
+    // Automatic community popup: settings are controlled only by the admin panel.
     const timer = window.setTimeout(load, 250);
     return () => {
       cancelled = true;
