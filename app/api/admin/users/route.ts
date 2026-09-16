@@ -13,18 +13,34 @@ function validSession(value: string | undefined, secret: string) {
   const expected = crypto.createHmac("sha256", secret).update(payload).digest("hex");
   return signature.length === expected.length && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
 }
-
-export async function GET(req: NextRequest) {
+function db(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return NextResponse.json({ error: "ADMIN_CONFIG_ERROR" }, { status: 500 });
-  if (!validSession(req.cookies.get("viewcash_admin")?.value, key)) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
+  if (!url || !key || !validSession(req.cookies.get("viewcash_admin")?.value, key)) return null;
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+}
 
-  const supabase = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+export async function GET(req: NextRequest) {
+  const supabase = db(req);
+  if (!supabase) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
   const search = req.nextUrl.searchParams.get("search")?.trim() || "";
-  let query = supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,status,created_at,wallets(balance,referral_balance,total_earned,total_withdrawn)").order("created_at", { ascending: false }).limit(100);
+  let query = supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,status,created_at,activated,account_level,wallets(balance,referral_balance,total_earned,total_withdrawn)").order("created_at", { ascending: false }).limit(100);
   if (search) query = query.or(`username.ilike.%${search}%,first_name.ilike.%${search}%,last_name.ilike.%${search}%`);
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: "ADMIN_USERS_ERROR" }, { status: 500 });
   return NextResponse.json({ users: data || [] });
+}
+
+export async function PATCH(req: NextRequest) {
+  const supabase = db(req);
+  if (!supabase) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
+  const body = await req.json().catch(() => null);
+  const id = String(body?.id || "").trim();
+  const activated = Boolean(body?.activated);
+  const level = Math.floor(Number(body?.account_level));
+  if (!id) return NextResponse.json({ error: "INVALID_USER" }, { status: 400 });
+  if (activated && (!Number.isInteger(level) || level < 1)) return NextResponse.json({ error: "INVALID_PLAN_LEVEL" }, { status: 400 });
+  const { error } = await supabase.from("users").update({ activated, account_level: activated ? level : null, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) return NextResponse.json({ error: "USER_PLAN_UPDATE_ERROR" }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }
