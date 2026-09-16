@@ -4,6 +4,7 @@ import "./globals.css";
 import ActivationLevelGate from "./components/activation-level-gate";
 import ViewCashBackNavigation from "./components/viewcash-back-navigation";
 import CurrentPlanCard from "./components/current-plan-card";
+import CommunityPopup from "./components/community-popup";
 
 export const metadata: Metadata = {
   title: "ViewCash",
@@ -111,6 +112,7 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 })();`}
         </Script>
         {children}
+        <CommunityPopup />
         <ViewCashBackNavigation />
         <CurrentPlanCard />
         <ActivationLevelGate />
