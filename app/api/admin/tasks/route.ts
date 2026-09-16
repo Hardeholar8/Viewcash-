@@ -36,7 +36,9 @@ function telegramChatValue(actionUrl: string | null, supplied: unknown) {
 function validateTelegramConfig(actionUrl: string | null, chat: string | null) {
   if (!actionUrl) return "TELEGRAM_URL_REQUIRED";
   const invite = /^https?:\/\/t\.me\/\+|^https?:\/\/t\.me\/joinchat\//i.test(actionUrl.trim());
-  if (invite && !chat) return "TELEGRAM_PRIVATE_CHAT_ID_REQUIRED";
+  // Private invite links intentionally have no chat ID at creation time.
+  // The Connect Telegram Chat flow fills it after the bot receives /connect <token>.
+  if (invite && !chat) return null;
   if (!chat) return "TELEGRAM_CHAT_REQUIRED";
   if (!/^@[A-Za-z0-9_]{4,}$/.test(chat) && !/^-?\d+$/.test(chat)) return "INVALID_TELEGRAM_CHAT_ID";
   return null;
