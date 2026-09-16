@@ -10,7 +10,7 @@ function validateInitData(initData: string, botToken: string) {
   const hash = params.get("hash");
   if (!hash) throw new Error("TELEGRAM_SESSION_INVALID");
   params.delete("hash");
-  const check = [...params.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k,v]) => `${k}=${v}`).join("\n");
+  const check = [...params.entries()].sort(([a], [b]) => a < b ? -1 : 1).map(([k,v]) => `${k}=${v}`).join("\n");
   const secret = crypto.createHmac("sha256", "WebAppData").update(botToken.trim()).digest();
   const calculated = crypto.createHmac("sha256", secret).update(check).digest("hex");
   if (calculated.length !== hash.length || !crypto.timingSafeEqual(Buffer.from(calculated), Buffer.from(hash))) throw new Error("TELEGRAM_SESSION_INVALID");
@@ -27,11 +27,41 @@ function db() {
   return createClient(VIEWCASH_SUPABASE_URL, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
+function normalizeTelegramChat(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^-100\d+$/.test(raw) || /^-\d+$/.test(raw)) return raw;
+  if (/^@[A-Za-z0-9_]{5,}$/.test(raw)) return raw;
+  try {
+    const url = new URL(raw);
+    if (url.hostname === "t.me" || url.hostname === "telegram.me") {
+      const first = url.pathname.split("/").filter(Boolean)[0] || "";
+      if (/^[A-Za-z0-9_]{5,}$/.test(first) && !first.startsWith("+") && first !== "joinchat") return `@${first}`;
+    }
+  } catch {}
+  if (/^[A-Za-z0-9_]{5,}$/.test(raw)) return `@${raw}`;
+  return raw;
+}
+
 async function telegramMember(chat: string, userId: number, token: string) {
-  const response = await fetch(`https://api.telegram.org/bot${token}/getChatMember?chat_id=${encodeURIComponent(chat)}&user_id=${userId}`, { cache: "no-store" });
+  const normalizedChat = normalizeTelegramChat(chat);
+  if (!normalizedChat) throw new Error("TELEGRAM_TASK_NOT_CONFIGURED");
+
+  const response = await fetch(`https://api.telegram.org/bot${token}/getChatMember?chat_id=${encodeURIComponent(normalizedChat)}&user_id=${userId}`, { cache: "no-store" });
   const data = await response.json().catch(() => null);
-  if (!response.ok || !data?.ok) throw new Error("TELEGRAM_VERIFY_FAILED");
-  return ["creator", "administrator", "member"].includes(data.result?.status);
+
+  if (!response.ok || !data?.ok) {
+    const description = String(data?.description || "");
+    if (/chat not found/i.test(description)) throw new Error("TELEGRAM_CHAT_NOT_FOUND");
+    if (/bot is not a member|bot is not an administrator|not enough rights|forbidden/i.test(description)) throw new Error("TELEGRAM_BOT_ACCESS_REQUIRED");
+    if (/user not found/i.test(description)) throw new Error("TELEGRAM_USER_NOT_FOUND_IN_CHAT");
+    throw new Error("TELEGRAM_VERIFY_FAILED");
+  }
+
+  const member = data.result;
+  const status = String(member?.status || "");
+  // Telegram can return restricted members; is_member is the reliable membership flag there.
+  return ["creator", "administrator", "member"].includes(status) || (status === "restricted" && member?.is_member === true);
 }
 
 export async function GET(req: NextRequest) {
