@@ -6,7 +6,7 @@ import { ArrowLeft, Copy, Gift, Users, Wallet } from "lucide-react";
 type Session = {
   referral_link?: string;
   referral_code?: string;
-  referral_coins?: number;
+  referral_balance?: number;
   referred_count?: number;
   activated_referral_count?: number;
   activated?: boolean;
@@ -82,7 +82,7 @@ export default function ReferralPage() {
         <>
           <section className="mt-6 rounded-3xl border border-cyan-300/15 bg-gradient-to-br from-cyan-400/[.12] to-white/[.025] p-5">
             <div className="flex items-center gap-2 text-cyan-300"><Wallet size={17} /><span className="text-[10px] font-bold uppercase tracking-[.18em]">Affiliate Wallet</span></div>
-            <p className="mt-2 text-3xl font-black">{Number(data.referral_coins || 0).toLocaleString()}</p>
+            <p className="mt-2 text-3xl font-black">{Number(data.referral_balance || 0).toLocaleString()}</p>
             <p className="mt-1 text-xs text-slate-500">Referral commission balance</p>
             <button onClick={() => window.location.assign("/withdraw?wallet=affiliate")} className="mt-4 w-full rounded-2xl bg-cyan-400 py-3 text-sm font-extrabold text-slate-950">Withdraw Commission</button>
           </section>
