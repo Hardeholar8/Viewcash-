@@ -33,7 +33,9 @@ export async function POST(req: NextRequest) {
     const { data: user, error: userError } = await db.from("users").select("id,status,activated").eq("telegram_id", tg.id).maybeSingle();
     if (userError) return NextResponse.json({ error: "TEMPORARY_CONNECTION_PROBLEM" }, { status: 503 });
     if (!user) return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
-    if (user.status !== "active" || !user.activated) return NextResponse.json({ error: "ACCOUNT_NOT_ELIGIBLE" }, { status: 403 });
+    // Daily Check-in is intentionally available before activation.
+    // Activation remains required for Watch Ads, Tasks, and Withdraw.
+    if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ELIGIBLE" }, { status: 403 });
 
     const { data: existing } = await db.from("daily_checkins").select("streak_day").eq("user_id", user.id).eq("checkin_date", new Date().toISOString().slice(0, 10)).maybeSingle();
     if (existing) return NextResponse.json({ error: "ALREADY_CHECKED_IN", streak_day: Number(existing.streak_day || 1) }, { status: 409 });
