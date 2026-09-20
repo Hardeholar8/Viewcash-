@@ -76,8 +76,18 @@ export async function POST(req: NextRequest) {
         if (referrer?.id) referredBy = referrer.id;
       }
       const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode, referred_by: referredBy }).select("id,telegram_id,username,first_name,last_name,referral_code,activated,account_level").single();
-      if (error) throw new Error(supabaseError("SUPABASE_USER_CREATE_ERROR", error));
-      user = data;
+      if (error) {
+        if (error.code === "23505") {
+          const existing = await lookupUser(supabase, telegramUser.id);
+          if (!existing) throw new Error(supabaseError("SUPABASE_USER_CREATE_ERROR", error));
+          user = existing;
+          isNew = false;
+        } else {
+          throw new Error(supabaseError("SUPABASE_USER_CREATE_ERROR", error));
+        }
+      } else {
+        user = data;
+      }
       const { error: walletError } = await supabase.from("wallets").insert({ user_id: user.id });
       if (walletError) throw new Error(supabaseError("SUPABASE_WALLET_CREATE_ERROR", walletError));
       const { data: setting } = await supabase.from("settings").select("value").eq("key", "welcome_bonus_mb").maybeSingle();
