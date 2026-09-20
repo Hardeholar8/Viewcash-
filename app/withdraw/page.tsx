@@ -65,7 +65,7 @@ export default function WithdrawPage() {
     setMessage("");
 
     if (!Number.isInteger(mb) || mb < minimumMb) {
-      setMessage("Enter at least ${minimumMb} MB.");
+      setMessage(`Enter at least ${minimumMb} MB.`);
       return;
     }
 
