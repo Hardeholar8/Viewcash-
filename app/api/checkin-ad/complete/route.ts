@@ -32,11 +32,9 @@ export async function POST(req: NextRequest) {
     if (!tg?.id || !requestVar || !ymid || !sessionId) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
 
     const db = createClient(SUPABASE_URL, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    const { data: user } = await db.from("users").select("id,status,activated").eq("telegram_id", tg.id).maybeSingle();
+    const { data: user } = await db.from("users").select("id,status").eq("telegram_id", tg.id).maybeSingle();
     if (!user) return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
 
-    // Daily Check-in is intentionally available before activation.
-    // Activation remains required for Watch Ads, Tasks, and Withdraw.
     if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ELIGIBLE" }, { status: 403 });
 
     const { data, error } = await db.rpc("credit_daily_checkin_ad_completion", {
