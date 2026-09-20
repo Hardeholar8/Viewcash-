@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { sendRedemptionMessage } from "@/lib/telegram-redemption";
 
-const SUPABASE_URL="https://glkpxyanjsktmwkvvsxt.supabase.co";
+const SUPABASE_URL=process.env.NEXT_PUBLIC_SUPABASE_URL||"https://glkpxyanjsktmwkvvsxt.supabase.co";
 function tg(initData:string,token:string){const p=new URLSearchParams(initData);const h=p.get("hash");if(!h)return null;p.delete("hash");const s=[...p.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${k}=${v}`).join("\n");const key=crypto.createHmac("sha256","WebAppData").update(token.trim()).digest();const calc=crypto.createHmac("sha256",key).update(s).digest("hex");if(h.length!==calc.length||!crypto.timingSafeEqual(Buffer.from(h),Buffer.from(calc)))return null;try{return JSON.parse(p.get("user")||"{}") as {id?:number}}catch{return null}}
 
 export async function POST(req:NextRequest){
@@ -16,10 +16,10 @@ export async function POST(req:NextRequest){
   if(!/^\d{11}$/.test(phone)||!/^0?234/.test(phone)&&!/^08|^07|^09/.test(phone))return NextResponse.json({error:"Enter a valid Nigerian MTN phone number."},{status:400});
   if(mb<100)return NextResponse.json({error:"Minimum data redemption is 100 MB."},{status:400});
   const db=createClient(SUPABASE_URL,key,{auth:{autoRefreshToken:false,persistSession:false}});
-  const {data:user}=await db.from("users").select("id,status,redemption_override").eq("telegram_id",u.id).maybeSingle();
+  const {data:user}=await db.from("users").select("id,status,redemption_override,redemption_unlocked").eq("telegram_id",u.id).maybeSingle();
   if(!user)return NextResponse.json({error:"USER_NOT_FOUND"},{status:404});
   if(user.status!=="active")return NextResponse.json({error:"ACCOUNT_NOT_ACTIVE"},{status:403});
-  if(!user.redemption_override){
+  if(!user.redemption_override && !user.redemption_unlocked){
    const { count: qualifiedReferrals } = await db.from("referrals").select("id",{count:"exact",head:true}).eq("referrer_id",user.id).eq("status","qualified");
    if(Number(qualifiedReferrals||0) < 10) return NextResponse.json({error:`Redeem Data is locked. Complete the referral requirement first: ${Number(qualifiedReferrals||0)}/10 qualified referrals.`},{status:403});
   }
