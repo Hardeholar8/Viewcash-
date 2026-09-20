@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const supabase = db(req);
   if (!supabase) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
   const search = req.nextUrl.searchParams.get("search")?.trim() || "";
-  let query = supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,status,created_at,wallets(balance,referral_balance,total_earned,total_withdrawn)").order("created_at", { ascending: false }).limit(100);
+  let query = supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,status,redemption_override,created_at,wallets(balance,referral_balance,total_earned,total_withdrawn)").order("created_at", { ascending: false }).limit(100);
   if (search) query = query.or(`username.ilike.%${search}%,first_name.ilike.%${search}%,last_name.ilike.%${search}%`);
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: "ADMIN_USERS_ERROR" }, { status: 500 });
@@ -37,8 +37,12 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const id = String(body?.id || "").trim();
   const status = String(body?.status || "").trim();
-  if (!id || !["active","suspended","pending"].includes(status)) return NextResponse.json({ error: "INVALID_USER_STATUS" }, { status: 400 });
-  const { error } = await supabase.from("users").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
-  if (error) return NextResponse.json({ error: "USER_STATUS_UPDATE_ERROR" }, { status: 500 });
+  const hasOverride = typeof body?.redemption_override === "boolean";
+  if (!id || (status && !["active","suspended","pending"].includes(status)) || (!status && !hasOverride)) return NextResponse.json({ error: "INVALID_USER_UPDATE" }, { status: 400 });
+  const update:any = { updated_at: new Date().toISOString() };
+  if (status) update.status = status;
+  if (hasOverride) update.redemption_override = body.redemption_override;
+  const { error } = await supabase.from("users").update(update).eq("id", id);
+  if (error) return NextResponse.json({ error: "USER_UPDATE_ERROR" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
