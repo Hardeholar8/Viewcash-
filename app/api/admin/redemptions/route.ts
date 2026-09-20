@@ -7,6 +7,16 @@ function db(req:NextRequest){const key=process.env.SUPABASE_SERVICE_ROLE_KEY,raw
 export async function GET(req:NextRequest){const d=db(req);if(!d)return NextResponse.json({error:"ADMIN_ACCESS_DENIED"},{status:403});const {data,error}=await d.from("data_redemptions").select("id,user_id,network,phone_number,amount_mb,balance_type,status,provider_reference,admin_note,created_at,processed_at,users(username,first_name,last_name)").order("created_at",{ascending:false});if(error)return NextResponse.json({error:"ADMIN_REDEMPTIONS_ERROR"},{status:500});return NextResponse.json({redemptions:(data||[]).map((x:any)=>({...x,username:x.users?.username||null}))});}
 export async function PATCH(req:NextRequest){const d=db(req);if(!d)return NextResponse.json({error:"ADMIN_ACCESS_DENIED"},{status:403});const b=await req.json().catch(()=>null);const id=String(b?.id||"");const status=String(b?.status||"");if(!id||!["pending","approved","completed","rejected"].includes(status))return NextResponse.json({error:"INVALID_REDEMPTION_UPDATE"},{status:400});const {data:row,error}=await d.from("data_redemptions").select("id,status,telegram_message_id,user_id,network,phone_number,amount_mb,created_at").eq("id",id).single();if(error||!row)return NextResponse.json({error:"REDEMPTION_NOT_FOUND"},{status:404});const {data,error:up}=await d.from("data_redemptions").update({status,admin_note:b?.admin_note==null?null:String(b.admin_note),processed_at:["completed","rejected"].includes(status)?new Date().toISOString():null}).eq("id",id).select().single();if(up)return NextResponse.json({error:"ADMIN_REDEMPTION_UPDATE_ERROR"},{status:500});
   if(status==="completed"){const {error:unlockError}=await d.from("users").update({redemption_unlocked:true,updated_at:new Date().toISOString()}).eq("id",row.user_id);if(unlockError)return NextResponse.json({error:"REDEMPTION_UNLOCK_UPDATE_ERROR"},{status:500});}
+  if(status==="rejected" && row.status!=="rejected"){
+    const {data:wallet,error:walletReadError}=await d.from("wallets").select("balance,referral_balance,total_earned").eq("user_id",row.user_id).single();
+    if(walletReadError || !wallet) return NextResponse.json({error:"REDEMPTION_REFUND_WALLET_ERROR"},{status:500});
+    const amount=Number(row.amount_mb||0);
+    const balanceField=row.balance_type==="referral"?"referral_balance":"balance";
+    const nextBalance=Number(wallet[balanceField]||0)+amount;
+    const {error:refundError}=await d.from("wallets").update({[balanceField]:nextBalance,updated_at:new Date().toISOString()}).eq("user_id",row.user_id);
+    if(refundError) return NextResponse.json({error:"REDEMPTION_REFUND_ERROR"},{status:500});
+    await d.from("transactions").insert({user_id:row.user_id,type:"redemption_refund",amount,balance_type:row.balance_type==="referral"?"referral":"main",reference:`redemption_refund:${row.id}`,description:`Refund for rejected MTN data redemption`});
+  }
   if(row.telegram_message_id && row.status!==status){
     const {data:profile}=await d.from("users").select("username,first_name").eq("id",row.user_id).maybeSingle();
     const {count}=await d.from("data_redemptions").select("id",{count:"exact",head:true}).eq("user_id",row.user_id).lte("created_at",row.created_at);
