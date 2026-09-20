@@ -134,11 +134,13 @@ export async function POST(req: NextRequest) {
     ]);
     const { data: unlockSetting } = await supabase.from("settings").select("value").eq("key", "referral_unlock_required").maybeSingle();
     const referralUnlockRequired = Number((unlockSetting?.value as { qualified_referrals?: number } | null)?.qualified_referrals || 10);
+    const { data: minimumSetting } = await supabase.from("settings").select("value").eq("key", "minimum_data_redemption_mb").maybeSingle();
+    const minimumDataMb = Math.max(1, Math.floor(Number((minimumSetting?.value as { amount?: number } | null)?.amount || 100)));
     const redemptionUnlocked = Boolean(user.redemption_override || user.redemption_unlocked || Number(qualifiedReferralCount || 0) >= referralUnlockRequired);
     const displayName = user.username ? `@${user.username}` : user.first_name || "Telegram User";
     const referralLink = `https://t.me/${BOT_USERNAME}?startapp=${encodeURIComponent(user.referral_code)}`;
     const dataBalanceMb = Number(wallet.balance ?? 0); const referralDataMb = Number(wallet.referral_balance ?? 0);
-    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, redemption_minimums: { task_mb: Number((await supabase.from("settings").select("value").eq("key","minimum_data_redemption_mb").maybeSingle()).data?.value?.amount || 100), referral_mb: Number((await supabase.from("settings").select("value").eq("key","minimum_data_redemption_mb").maybeSingle()).data?.value?.amount || 100) }, referral_code: user.referral_code, referral_link: referralLink, referred_count: Number(referredCount || 0), qualified_referral_count: Number(qualifiedReferralCount || 0), referral_unlock_required: referralUnlockRequired, redemption_unlocked: redemptionUnlocked, balance_mb: dataBalanceMb, referral_balance_mb: referralDataMb, total_earned_mb: Number(wallet.total_earned ?? 0), total_redeemed_mb: Number(wallet.total_withdrawn ?? 0), new_user: isNew });
+    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, redemption_minimums: { task_mb: minimumDataMb, referral_mb: minimumDataMb }, referral_code: user.referral_code, referral_link: referralLink, referred_count: Number(referredCount || 0), qualified_referral_count: Number(qualifiedReferralCount || 0), referral_unlock_required: referralUnlockRequired, redemption_unlocked: redemptionUnlocked, balance_mb: dataBalanceMb, referral_balance_mb: referralDataMb, total_earned_mb: Number(wallet.total_earned ?? 0), total_redeemed_mb: Number(wallet.total_withdrawn ?? 0), new_user: isNew });
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
     const message = error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR";
