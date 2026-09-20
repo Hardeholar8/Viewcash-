@@ -61,19 +61,17 @@ export async function POST(req: Request) {
     const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
     const { data: user, error: userError } = await db
       .from("users")
-      .select("id,status,activated,account_level")
+      .select("id,status")
       .eq("telegram_id", telegramId)
       .maybeSingle();
     if (userError) throw userError;
-    if (!user || user.status !== "active" || !user.activated) return NextResponse.json({ error: "USER_NOT_ELIGIBLE" }, { status: 403 });
+    if (!user || user.status !== "active") return NextResponse.json({ error: "USER_NOT_ELIGIBLE" }, { status: 403 });
 
-    const { data: plan, error: planError } = await db
-      .from("activation_levels")
-      .select("daily_ad_limit,ad_reward_coins,active")
-      .eq("level", user.account_level)
-      .maybeSingle();
-    if (planError) throw planError;
-    if (!plan || !plan.active) return NextResponse.json({ error: "PLAN_NOT_AVAILABLE" }, { status: 403 });
+    const { data: limitSetting } = await db.from("settings").select("value").eq("key","daily_ad_limit").maybeSingle();
+    const { data: rewardSetting } = await db.from("settings").select("value").eq("key","ad_reward_mb").maybeSingle();
+    const limit = Number(limitSetting?.value?.count || 0);
+    const rewardMb = Number(rewardSetting?.value?.amount || 0);
+    if (!Number.isFinite(rewardMb) || rewardMb <= 0) return NextResponse.json({ error: "REWARD_NOT_CONFIGURED" }, { status: 500 });
 
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -82,23 +80,19 @@ export async function POST(req: Request) {
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
       .gte("created_at", start.toISOString());
-    const limit = Number(plan.daily_ad_limit || 0);
     if (limit > 0 && (count || 0) >= limit) return NextResponse.json({ error: "DAILY_AD_LIMIT_REACHED" }, { status: 429 });
-
-    const rewardCoins = Number(plan.ad_reward_coins || 0);
-    if (!Number.isFinite(rewardCoins) || rewardCoins <= 0) return NextResponse.json({ error: "REWARD_NOT_CONFIGURED" }, { status: 500 });
 
     const { data, error } = await db.rpc("credit_adsgalaxy_reward", {
       p_user_id: user.id,
       p_event_id: eventId,
       p_request_id: requestId,
-      p_reward_coins: rewardCoins,
+      p_reward_mb: rewardMb,
     });
     if (error) throw error;
     if (!data?.ok) return NextResponse.json(data || { error: "REWARD_NOT_CREDITED" }, { status: 409 });
 
-    console.log("Ads Galaxy reward processed", { eventId, requestId, telegramId, duplicate: !!data.duplicate, rewardCoins: Number(data.reward_coins || 0) });
-    return NextResponse.json({ ok: true, duplicate: !!data.duplicate, reward_coins: Number(data.reward_coins || 0) });
+    console.log("Ads Galaxy reward processed", { eventId, requestId, telegramId, duplicate: !!data.duplicate, rewardMb: Number(data.reward_mb || 0) });
+    return NextResponse.json({ ok: true, duplicate: !!data.duplicate, reward_mb: Number(data.reward_mb || 0) });
   } catch (error) {
     console.error("Ads Galaxy callback error", error);
     return NextResponse.json({ error: "CALLBACK_PROCESSING_FAILED" }, { status: 500 });
