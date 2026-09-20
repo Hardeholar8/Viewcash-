@@ -38,7 +38,7 @@ const isTransient = (message: string) => /gateway timeout|bad gateway|service un
 async function lookupUser(supabase: any, telegramId: number): Promise<any> {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code").eq("telegram_id", telegramId).maybeSingle();
+    const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,device_fingerprint_hash,ip_fingerprint_hash,user_agent_fingerprint_hash,client_signal_hash").eq("telegram_id", telegramId).maybeSingle();
     if (!result.error) return result.data;
     lastError = result.error;
     if (!isTransient(result.error.message || "")) break;
@@ -61,7 +61,7 @@ async function lookupWallet(supabase: any, userId: string): Promise<any> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { initData, deviceId } = await req.json();
+    const { initData, deviceId, screen, platform, language, timezone, cores } = await req.json();
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!botToken || !serviceRoleKey) throw new Error("VIEWCASH_SERVER_CONFIG_ERROR");
@@ -72,23 +72,26 @@ export async function POST(req: NextRequest) {
     const forwardedFor = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "";
     const ip = forwardedFor.split(",")[0].trim();
     const ipFingerprintHash = ip ? fingerprint(ip) : null;
-    const userAgentFingerprintHash = fingerprint(req.headers.get("user-agent") || "");
+    const userAgent = req.headers.get("user-agent") || "";
+    const userAgentFingerprintHash = fingerprint(userAgent);
+    const clientSignalHash = fingerprint([screen, platform, language, timezone, cores, userAgent].map(v => String(v ?? "")).join("|"));
     let user: any = await lookupUser(supabase, telegramUser.id);
     let isNew = false;
     if (!user) {
       isNew = true;
       let referredBy: string | null = null;
       if (startParam) {
-        const { data: referrer } = await supabase.from("users").select("id,telegram_id,device_fingerprint_hash,ip_fingerprint_hash,user_agent_fingerprint_hash").eq("referral_code", startParam).maybeSingle();
+        const { data: referrer } = await supabase.from("users").select("id,telegram_id,device_fingerprint_hash,ip_fingerprint_hash,user_agent_fingerprint_hash,client_signal_hash").eq("referral_code", startParam).maybeSingle();
         if (referrer?.id) {
           const sameDevice = Boolean(deviceFingerprintHash && referrer.device_fingerprint_hash && deviceFingerprintHash === referrer.device_fingerprint_hash);
           const sameIpAndAgent = Boolean(ipFingerprintHash && referrer.ip_fingerprint_hash && ipFingerprintHash === referrer.ip_fingerprint_hash && userAgentFingerprintHash === referrer.user_agent_fingerprint_hash);
+          const sameClientSignals = Boolean(clientSignalHash && referrer.client_signal_hash && clientSignalHash === referrer.client_signal_hash);
           const sameTelegram = Number(referrer.telegram_id) === Number(telegramUser.id);
-          if (!sameDevice && !sameIpAndAgent && !sameTelegram) referredBy = referrer.id;
-          else if (sameDevice || sameIpAndAgent || sameTelegram) referredBy = null;
+          if (!sameDevice && !sameIpAndAgent && !sameClientSignals && !sameTelegram) referredBy = referrer.id;
+          else if (sameDevice || sameIpAndAgent || sameClientSignals || sameTelegram) referredBy = null;
         }
       }
-      const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode, referred_by: referredBy, device_fingerprint_hash: deviceFingerprintHash, ip_fingerprint_hash: ipFingerprintHash, user_agent_fingerprint_hash: userAgentFingerprintHash }).select("id,telegram_id,username,first_name,last_name,referral_code").single();
+      const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode, referred_by: referredBy, device_fingerprint_hash: deviceFingerprintHash, ip_fingerprint_hash: ipFingerprintHash, user_agent_fingerprint_hash: userAgentFingerprintHash, client_signal_hash: clientSignalHash }).select("id,telegram_id,username,first_name,last_name,referral_code").single();
       if (error) {
         if (error.code === "23505") {
           const existing = await lookupUser(supabase, telegramUser.id);
@@ -107,8 +110,8 @@ export async function POST(req: NextRequest) {
           const sameDevice = Boolean(deviceFingerprintHash && referrer.device_fingerprint_hash && deviceFingerprintHash === referrer.device_fingerprint_hash);
           const sameIpAndAgent = Boolean(ipFingerprintHash && referrer.ip_fingerprint_hash && ipFingerprintHash === referrer.ip_fingerprint_hash && userAgentFingerprintHash === referrer.user_agent_fingerprint_hash);
           const sameTelegram = Number(referrer.telegram_id) === Number(telegramUser.id);
-          if (sameDevice || sameIpAndAgent || sameTelegram) {
-            await supabase.from("fraud_flags").insert({ user_id: user.id, reason: "Self-referral rejected", severity: "high", metadata: { referrer_id: referrer.id, match: sameDevice ? "device" : sameIpAndAgent ? "ip_and_user_agent" : "telegram" } });
+          if (sameDevice || sameIpAndAgent || sameClientSignals || sameTelegram) {
+            await supabase.from("fraud_flags").insert({ user_id: user.id, reason: "Self-referral rejected", severity: "high", metadata: { referrer_id: referrer.id, match: sameDevice ? "device" : sameIpAndAgent ? "ip_and_user_agent" : sameClientSignals ? "client_signals" : "telegram" } });
           }
         }
       }
