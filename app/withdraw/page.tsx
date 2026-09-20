@@ -72,7 +72,7 @@ export default function WithdrawPage() {
       return;
     }
 
-    if (!/^0[789]\\d{9}$/.test(phone)) {
+    if (!/^0[789]\d{9}$/.test(phone)) {
       setMessage("Enter a valid 11-digit Nigerian MTN number.");
       return;
     }
