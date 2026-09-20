@@ -48,7 +48,7 @@ async function lookupUser(supabase: any, telegramId: number): Promise<any> {
 async function lookupWallet(supabase: any, userId: string): Promise<any> {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const result = await supabase.from("wallets").select("coins,referral_balance,total_earned,total_withdrawn").eq("user_id", userId).maybeSingle();
+    const result = await supabase.from("wallets").select("balance,referral_balance,total_earned,total_withdrawn").eq("user_id", userId).maybeSingle();
     if (!result.error && result.data) return result.data;
     lastError = result.error || { code: "WALLET_NOT_FOUND", message: "Wallet not found" };
     if (!result.error || !isTransient(result.error.message || "")) break;
@@ -91,11 +91,11 @@ export async function POST(req: NextRequest) {
       const { error: walletError } = await supabase.from("wallets").insert({ user_id: user.id });
       if (walletError) throw new Error(supabaseError("SUPABASE_WALLET_CREATE_ERROR", walletError));
       const { data: setting } = await supabase.from("settings").select("value").eq("key", "welcome_bonus_mb").maybeSingle();
-      const welcomeCoins = Number((setting?.value as { amount?: number } | null)?.amount || 0);
-      if (welcomeCoins > 0) {
+      const welcomeMb = Number((setting?.value as { amount?: number } | null)?.amount || 0);
+      if (welcomeMb > 0) {
         const reference = `welcome:${user.id}`;
-        const { error: txError } = await supabase.from("transactions").insert({ user_id: user.id, type: "adjustment", amount: welcomeCoins, balance_type: "main", reference, description: "Welcome bonus data" });
-        if (!txError) await supabase.from("wallets").update({ coins: welcomeCoins, total_coins_earned: welcomeCoins }).eq("user_id", user.id);
+        const { error: txError } = await supabase.from("transactions").insert({ user_id: user.id, type: "adjustment", amount: welcomeMb, balance_type: "main", reference, description: "Welcome bonus data" });
+        if (!txError) await supabase.from("wallets").update({ balance: welcomeMb, total_earned: welcomeMb }).eq("user_id", user.id);
       }
       if (referredBy) await supabase.from("referrals").insert({ referrer_id: referredBy, referred_user_id: user.id, reward_amount: 0, status: "pending" });
     }
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
     const redemptionUnlocked = Number(qualifiedReferralCount || 0) >= referralUnlockRequired;
     const displayName = user.username ? `@${user.username}` : user.first_name || "Telegram User";
     const referralLink = `https://t.me/${BOT_USERNAME}?startapp=${encodeURIComponent(user.referral_code)}`;
-    const dataBalanceMb = Number(wallet.coins ?? 0); const referralDataMb = Number(wallet.referral_balance ?? 0);
+    const dataBalanceMb = Number(wallet.balance ?? 0); const referralDataMb = Number(wallet.referral_balance ?? 0);
     return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, redemption_minimums: { task_mb: 100, referral_mb: 100 }, referral_code: user.referral_code, referral_link: referralLink, referred_count: Number(referredCount || 0), qualified_referral_count: Number(qualifiedReferralCount || 0), referral_unlock_required: referralUnlockRequired, redemption_unlocked: redemptionUnlocked, balance_mb: dataBalanceMb, referral_balance_mb: referralDataMb, total_earned_mb: Number(wallet.total_earned ?? 0), total_redeemed_mb: Number(wallet.total_withdrawn ?? 0), new_user: isNew });
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
