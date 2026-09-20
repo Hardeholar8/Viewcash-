@@ -71,9 +71,8 @@ export async function GET(req: NextRequest) {
     if (!token) throw new Error("SERVER_CONFIG_ERROR");
     const tgUser = validateInitData(initData, token);
     const supabase = db();
-    const { data: user } = await supabase.from("users").select("id,activated,status").eq("telegram_id", tgUser.id).single();
+    const { data: user } = await supabase.from("users").select("id,status").eq("telegram_id", tgUser.id).single();
     if (!user) return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
-    if (!user.activated) return NextResponse.json({ error: "ACCOUNT_ACTIVATION_REQUIRED", activated: false, tasks: [], pendingTasks: [], approvedTasks: [], rejectedTasks: [] }, { status: 403 });
     if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ACTIVE" }, { status: 403 });
 
     const [{ data: taskData, error: taskError }, { data: completionData, error: completionError }] = await Promise.all([
@@ -89,9 +88,9 @@ export async function GET(req: NextRequest) {
     const approvedTasks = completions.filter((c:any) => c.status === "approved");
     const rejectedTasks = completions.filter((c:any) => c.status === "rejected");
 
-    return NextResponse.json({ tasks: activeTasks, pendingTasks, approvedTasks, rejectedTasks, activated: true });
+    return NextResponse.json({ tasks: activeTasks, pendingTasks, approvedTasks, rejectedTasks });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "TASKS_UNAVAILABLE" }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load opportunities. Please try again." }, { status: 500 });
   }
 }
 
@@ -106,9 +105,8 @@ export async function POST(req: NextRequest) {
     if (!token) throw new Error("SERVER_CONFIG_ERROR");
     const tgUser = validateInitData(initData, token);
     const supabase = db();
-    const { data: user, error: userError } = await supabase.from("users").select("id,telegram_id,status,activated").eq("telegram_id", tgUser.id).single();
+    const { data: user, error: userError } = await supabase.from("users").select("id,telegram_id,status").eq("telegram_id", tgUser.id).single();
     if (userError || !user) return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
-    if (!user.activated) return NextResponse.json({ error: "ACCOUNT_ACTIVATION_REQUIRED" }, { status: 403 });
     if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ACTIVE" }, { status: 403 });
     const fraud = await checkTaskFraud(user.id);
     if (!fraud.allowed) return NextResponse.json({ error: fraud.error }, { status: 429 });
@@ -135,6 +133,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(data);
   } catch (error) {
     console.error("ViewCash task verification error", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "TASK_VERIFICATION_FAILED" }, { status: 500 });
+    return NextResponse.json({ error: "Unable to submit this opportunity right now. Please try again." }, { status: 500 });
   }
 }
