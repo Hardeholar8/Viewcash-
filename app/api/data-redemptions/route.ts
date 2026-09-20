@@ -14,8 +14,10 @@ export async function POST(req:NextRequest){
   if(!token||!key)return NextResponse.json({error:"SERVER_CONFIG_ERROR"},{status:500});
   if(!u?.id)return NextResponse.json({error:"INVALID_TELEGRAM_SESSION"},{status:401});
   if(!/^\d{11}$/.test(phone)||!/^0?234/.test(phone)&&!/^08|^07|^09/.test(phone))return NextResponse.json({error:"Enter a valid Nigerian MTN phone number."},{status:400});
-  if(mb<100)return NextResponse.json({error:"Minimum data redemption is 100 MB."},{status:400});
   const db=createClient(SUPABASE_URL,key,{auth:{autoRefreshToken:false,persistSession:false}});
+  const {data:minSetting}=await db.from("settings").select("value").eq("key","minimum_data_redemption_mb").maybeSingle();
+  const minimumMb=Math.max(1,Math.floor(Number((minSetting?.value as {amount?:number}|null)?.amount||100)));
+  if(mb<minimumMb)return NextResponse.json({error:`Minimum data redemption is ${minimumMb} MB.`},{status:400});
   const {data:user}=await db.from("users").select("id,status,redemption_override,redemption_unlocked").eq("telegram_id",u.id).maybeSingle();
   if(!user)return NextResponse.json({error:"USER_NOT_FOUND"},{status:404});
   if(user.status!=="active")return NextResponse.json({error:"ACCOUNT_NOT_ACTIVE"},{status:403});
