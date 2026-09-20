@@ -30,11 +30,9 @@ export async function POST(req: NextRequest) {
     if (!serviceKey) return NextResponse.json({ error: "SERVER_CONFIG_ERROR" }, { status: 500 });
 
     const db = createClient(SUPABASE_URL, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    const { data: user, error: userError } = await db.from("users").select("id,status,activated").eq("telegram_id", tg.id).maybeSingle();
+    const { data: user, error: userError } = await db.from("users").select("id,status").eq("telegram_id", tg.id).maybeSingle();
     if (userError) return NextResponse.json({ error: "TEMPORARY_CONNECTION_PROBLEM" }, { status: 503 });
     if (!user) return NextResponse.json({ error: "USER_NOT_FOUND" }, { status: 404 });
-    // Daily Check-in is intentionally available before activation.
-    // Activation remains required for Watch Ads, Tasks, and Withdraw.
     if (user.status !== "active") return NextResponse.json({ error: "ACCOUNT_NOT_ELIGIBLE" }, { status: 403 });
 
     const { data: existing } = await db.from("daily_checkins").select("streak_day").eq("user_id", user.id).eq("checkin_date", new Date().toISOString().slice(0, 10)).maybeSingle();
