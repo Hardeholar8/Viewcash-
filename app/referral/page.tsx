@@ -67,24 +67,24 @@ export default function ReferralPage() {
   };
 
   return (
-    <main className="mx-auto min-h-screen max-w-md bg-[#070b14] px-4 pb-10 pt-5 text-slate-100 shadow-2xl">
+    <main className="mx-auto min-h-screen max-w-md bg-[#080808] px-4 pb-10 pt-5 text-white shadow-2xl">
       <header className="flex items-center gap-3">
         <button onClick={() => window.location.assign("/")} className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[.04]">
           <ArrowLeft size={19} />
         </button>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[.2em] text-cyan-300">ViewCash</p>
+          <p className="text-[10px] font-bold uppercase tracking-[.2em] text-yellow-300">ViewCash</p>
           <h1 className="text-2xl font-black">Referral</h1>
         </div>
       </header>
 
       {status ? <div className="mt-6 rounded-3xl border border-white/10 bg-white/[.035] p-4 text-sm leading-6 text-slate-400">{status}</div> : (
         <>
-          <section className="mt-6 rounded-3xl border border-cyan-300/15 bg-gradient-to-br from-cyan-400/[.12] to-white/[.025] p-5">
-            <div className="flex items-center gap-2 text-cyan-300"><Wallet size={17} /><span className="text-[10px] font-bold uppercase tracking-[.18em]">Affiliate Wallet</span></div>
+          <section className="mt-6 rounded-3xl border border-yellow-300/15 bg-gradient-to-br from-yellow-400/[.12] to-white/[.025] p-5">
+            <div className="flex items-center gap-2 text-cyan-300"><Wallet size={17} /><span className="text-[10px] font-bold uppercase tracking-[.18em]">Referral Balance</span></div>
             <p className="mt-2 text-3xl font-black">{Number(data.referral_balance || 0).toLocaleString()}</p>
-            <p className="mt-1 text-xs text-slate-500">Referral commission balance</p>
-            <button onClick={() => window.location.assign("/withdraw?wallet=affiliate")} className="mt-4 w-full rounded-2xl bg-cyan-400 py-3 text-sm font-extrabold text-slate-950">Withdraw Commission</button>
+            <p className="mt-1 text-xs text-slate-500">Available referral balance</p>
+            <button onClick={() => window.location.assign("/withdraw?wallet=affiliate")} className="mt-4 w-full rounded-2xl bg-yellow-400 py-3 text-sm font-extrabold text-black">Withdraw Referral Balance</button>
           </section>
 
           <section className="mt-4 grid grid-cols-2 gap-3">
