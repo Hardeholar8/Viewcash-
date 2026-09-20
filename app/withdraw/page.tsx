@@ -19,6 +19,9 @@ export default function WithdrawPage() {
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [unlocked, setUnlocked] = useState(false);
+  const [unlockRequired, setUnlockRequired] = useState(10);
+  const [qualifiedReferrals, setQualifiedReferrals] = useState(0);
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
@@ -44,6 +47,9 @@ export default function WithdrawPage() {
         }
         setBalance(Number(data.balance_mb || 0));
         setReferralBalance(Number(data.referral_balance_mb || 0));
+        setUnlocked(Boolean(data.redemption_unlocked));
+        setUnlockRequired(Number(data.referral_unlock_required || 10));
+        setQualifiedReferrals(Number(data.qualified_referral_count || 0));
       })
       .catch((error) => {
         setMessage(error.message || "Unable to load data balance");
@@ -137,7 +143,7 @@ export default function WithdrawPage() {
           </p>
         </div>
 
-        <div className="mt-4 space-y-3">
+        {!unlocked ? <div className="mt-4 rounded-2xl border border-yellow-300/20 bg-yellow-400/[.07] p-4"><p className="text-[10px] font-black uppercase tracking-[.18em] text-yellow-300">Redemption locked</p><h2 className="mt-1 text-lg font-black">Unlock MTN data redemption</h2><p className="mt-2 text-sm leading-5 text-slate-400">Complete the requirement of {unlockRequired} qualified referrals to open the data redemption portal.</p><p className="mt-3 text-xs font-bold text-yellow-200">{qualifiedReferrals}/{unlockRequired} qualified referrals</p><button onClick={() => location.assign("/")} className="mt-4 w-full rounded-2xl border border-white/10 bg-white/[.04] py-3 text-sm font-bold">Back to ViewCash</button></div> : <div className="mt-4 space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => setWallet("rewards")}
@@ -157,7 +163,7 @@ export default function WithdrawPage() {
             className="field"
             value={phone}
             onChange={(event) =>
-              setPhone(event.target.value.replace(/\\D/g, "").slice(0, 11))
+              setPhone(event.target.value.replace(/\D/g, "").slice(0, 11))
             }
             placeholder="MTN phone number"
             inputMode="numeric"
@@ -192,7 +198,7 @@ export default function WithdrawPage() {
           >
             {busy ? "Submitting..." : "Redeem MTN Data"}
           </button>
-        </div>
+        </div>}
 
         {message && (
           <div className="mt-4 rounded-2xl border border-yellow-300/15 bg-yellow-400/[.06] p-3 text-sm text-yellow-100">
