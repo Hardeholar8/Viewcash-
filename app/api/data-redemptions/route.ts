@@ -8,7 +8,7 @@ function tg(initData:string,token:string){const p=new URLSearchParams(initData);
 
 export async function POST(req:NextRequest){
  try{
-  const b=await req.json().catch(()=>({})); const token=process.env.TELEGRAM_REDEMPTION_BOT_TOKEN, key=process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const b=await req.json().catch(()=>({})); const token=process.env.TELEGRAM_BOT_TOKEN, key=process.env.SUPABASE_SERVICE_ROLE_KEY;
   const u=tg(String(b.initData||""),token||""); const mb=Math.floor(Number(b.amount_mb||0)); const phone=String(b.phone_number||"").replace(/\D/g,"");
   const type=b.balance_type==="referral"?"referral":"tasks";
   if(!token||!key)return NextResponse.json({error:"SERVER_CONFIG_ERROR"},{status:500});
