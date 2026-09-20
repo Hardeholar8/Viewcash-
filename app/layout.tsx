@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
-import ActivationLevelGate from "./components/activation-level-gate";
 import ViewCashBackNavigation from "./components/viewcash-back-navigation";
-import CurrentPlanCard from "./components/current-plan-card";
 import CommunityPopup from "./components/community-popup";
 
 export const metadata: Metadata = {
@@ -114,8 +112,6 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
         {children}
         <CommunityPopup />
         <ViewCashBackNavigation />
-        <CurrentPlanCard />
-        <ActivationLevelGate />
       </body>
     </html>
   );
