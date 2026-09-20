@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       console.error("ViewCash check-in ad reward error", error);
       return NextResponse.json({ error: "CHECKIN_CREDIT_FAILED" }, { status: 500 });
     }
-    if (data?.ok) return NextResponse.json({ ok: true, duplicate: !!data.duplicate, reward_coins: Number(data.reward_coins || 0), streak_day: Number(data.streak_day || 1) });
+    if (data?.ok) return NextResponse.json({ ok: true, duplicate: !!data.duplicate, reward_mb: Number(data.reward_mb || 0), streak_day: Number(data.streak_day || 1) });
     return NextResponse.json(data || { ok: false, error: "CHECKIN_NOT_CREDITED" }, { status: 409 });
   } catch (error) {
     console.error("ViewCash check-in ad completion error", error);
