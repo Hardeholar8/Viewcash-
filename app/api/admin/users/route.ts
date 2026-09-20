@@ -36,11 +36,9 @@ export async function PATCH(req: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
   const body = await req.json().catch(() => null);
   const id = String(body?.id || "").trim();
-  const activated = Boolean(body?.activated);
-  const level = Math.floor(Number(body?.account_level));
-  if (!id) return NextResponse.json({ error: "INVALID_USER" }, { status: 400 });
-  if (activated && (!Number.isInteger(level) || level < 1)) return NextResponse.json({ error: "INVALID_PLAN_LEVEL" }, { status: 400 });
-  const { error } = await supabase.from("users").update({ activated, account_level: activated ? level : null, updated_at: new Date().toISOString() }).eq("id", id);
-  if (error) return NextResponse.json({ error: "USER_PLAN_UPDATE_ERROR" }, { status: 500 });
+  const status = String(body?.status || "").trim();
+  if (!id || !["active","suspended","pending"].includes(status)) return NextResponse.json({ error: "INVALID_USER_STATUS" }, { status: 400 });
+  const { error } = await supabase.from("users").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) return NextResponse.json({ error: "USER_STATUS_UPDATE_ERROR" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
