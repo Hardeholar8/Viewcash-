@@ -36,7 +36,7 @@ const isTransient = (message: string) => /gateway timeout|bad gateway|service un
 async function lookupUser(supabase: any, telegramId: number): Promise<any> {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,activated,account_level").eq("telegram_id", telegramId).maybeSingle();
+    const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code").eq("telegram_id", telegramId).maybeSingle();
     if (!result.error) return result.data;
     lastError = result.error;
     if (!isTransient(result.error.message || "")) break;
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
         const { data: referrer } = await supabase.from("users").select("id").eq("referral_code", startParam).maybeSingle();
         if (referrer?.id) referredBy = referrer.id;
       }
-      const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode, referred_by: referredBy }).select("id,telegram_id,username,first_name,last_name,referral_code,activated,account_level").single();
+      const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode, referred_by: referredBy }).select("id,telegram_id,username,first_name,last_name,referral_code").single();
       if (error) {
         if (error.code === "23505") {
           const existing = await lookupUser(supabase, telegramUser.id);
@@ -100,16 +100,6 @@ export async function POST(req: NextRequest) {
       if (referredBy) await supabase.from("referrals").insert({ referrer_id: referredBy, referred_user_id: user.id, reward_amount: 0, status: "pending" });
     }
     const wallet = await lookupWallet(supabase, user.id);
-    let plan: any = null;
-    if (user.account_level) {
-      const { data: level } = await supabase.from("activation_levels").select("level,name,daily_earning_cap,activation_fee,task_min_withdrawal,affiliate_min_withdrawal").eq("level", user.account_level).maybeSingle();
-      plan = level || null;
-    }
-    const { data: rateSetting } = await supabase.from("settings").select("value").eq("key", "coin_cash_rate").maybeSingle();
-    const rateCoins_unused = Number((rateSetting?.value as { coins?: number } | null)?.coins || 1000);
-    const rateCash_unused = Number((rateSetting?.value as { cash?: number } | null)?.cash || 100);
-    const taskMinimumCash = Number(plan?.task_min_withdrawal || 0);
-    const affiliateMinimum = Number(plan?.affiliate_min_withdrawal || 0);
     
     const [{ count: referredCount }, { count: qualifiedReferralCount }] = await Promise.all([
       supabase.from("users").select("id", { count: "exact", head: true }).eq("referred_by", user.id),
@@ -121,11 +111,11 @@ export async function POST(req: NextRequest) {
     const displayName = user.username ? `@${user.username}` : user.first_name || "Telegram User";
     const referralLink = `https://t.me/${BOT_USERNAME}?startapp=${encodeURIComponent(user.referral_code)}`;
     const dataBalanceMb = Number(wallet.coins ?? 0); const referralDataMb = Number(wallet.referral_balance ?? 0);
-    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, activated: Boolean(user.activated), account_level: user.account_level ?? null, plan: plan ? { name: plan.name, daily_earning_cap: Number(plan.daily_earning_cap ?? 0), activation_fee: Number(plan.activation_fee ?? 0) } : null, redemption_minimums: { task_mb: 100, referral_mb: 100 }, referral_code: user.referral_code, referral_link: referralLink, referred_count: Number(referredCount || 0), qualified_referral_count: Number(qualifiedReferralCount || 0), referral_unlock_required: referralUnlockRequired, redemption_unlocked: redemptionUnlocked, balance_mb: dataBalanceMb, referral_balance_mb: referralDataMb, total_earned_mb: Number(wallet.total_earned ?? 0), total_redeemed_mb: Number(wallet.total_withdrawn ?? 0), new_user: isNew });
+    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, redemption_minimums: { task_mb: 100, referral_mb: 100 }, referral_code: user.referral_code, referral_link: referralLink, referred_count: Number(referredCount || 0), qualified_referral_count: Number(qualifiedReferralCount || 0), referral_unlock_required: referralUnlockRequired, redemption_unlocked: redemptionUnlocked, balance_mb: dataBalanceMb, referral_balance_mb: referralDataMb, total_earned_mb: Number(wallet.total_earned ?? 0), total_redeemed_mb: Number(wallet.total_withdrawn ?? 0), new_user: isNew });
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
     const message = error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR";
-    const safeMessage = message.includes(":TEMPORARY_DATABASE_ERROR") ? "Temporary connection problem. Please try again." : message;
+    const safeMessage = message.includes(":TEMPORARY_DATABASE_ERROR") ? "Temporary connection problem. Please try again." : "Unable to load your ViewCash account. Please reopen ViewCash and try again.";
     return NextResponse.json({ error: safeMessage }, { status: 401 });
   }
 }
