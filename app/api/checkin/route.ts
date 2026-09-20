@@ -39,9 +39,9 @@ export async function POST(req: NextRequest) {
     if (error) throw new Error("Unable to process check-in.");
     const result = Array.isArray(data) ? data[0] : data;
     if (!result?.checked_in) {
-      return NextResponse.json({ ok: true, checked_in: false, reward_coins: 0, streak_day: Number(result?.streak_day || 1), message: "You have already checked in today." });
+      return NextResponse.json({ ok: true, checked_in: false, reward_mb: 0, streak_day: Number(result?.streak_day || 1), message: "You have already checked in today." });
     }
-    return NextResponse.json({ ok: true, checked_in: true, reward_coins: Number(result.reward_coins || 0), streak_day: Number(result.streak_day || 1), message: `Daily check-in claimed: +${Number(result.reward_coins || 0).toLocaleString()} coins.` });
+    return NextResponse.json({ ok: true, checked_in: true, reward_mb: Number(result.reward_mb || 0), streak_day: Number(result.streak_day || 1), message: `Daily check-in claimed: +${Number(result.reward_mb || 0).toLocaleString()} MB.` });
   } catch (error) {
     console.error("ViewCash check-in error", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Check-in failed." }, { status: 400 });
