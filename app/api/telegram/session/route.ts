@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       user = data;
       const { error: walletError } = await supabase.from("wallets").insert({ user_id: user.id });
       if (walletError) throw new Error(supabaseError("SUPABASE_WALLET_CREATE_ERROR", walletError));
-      const { data: setting } = await supabase.from("settings").select("value").eq("key", "welcome_bonus_coins").maybeSingle();
+      const { data: setting } = await supabase.from("settings").select("value").eq("key", "welcome_bonus_mb").maybeSingle();
       const welcomeCoins = Number((setting?.value as { amount?: number } | null)?.amount || 0);
       if (welcomeCoins > 0) {
         const reference = `welcome:${user.id}`;
