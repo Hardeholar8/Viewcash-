@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
       const welcomeCoins = Number((setting?.value as { amount?: number } | null)?.amount || 0);
       if (welcomeCoins > 0) {
         const reference = `welcome:${user.id}`;
-        const { error: txError } = await supabase.from("transactions").insert({ user_id: user.id, type: "adjustment", amount: welcomeCoins, balance_type: "main", reference, description: "Welcome bonus coins" });
+        const { error: txError } = await supabase.from("transactions").insert({ user_id: user.id, type: "adjustment", amount: welcomeCoins, balance_type: "main", reference, description: "Welcome bonus data" });
         if (!txError) await supabase.from("wallets").update({ coins: welcomeCoins, total_coins_earned: welcomeCoins }).eq("user_id", user.id);
       }
       if (referredBy) await supabase.from("referrals").insert({ referrer_id: referredBy, referred_user_id: user.id, reward_amount: 0, status: "pending" });
