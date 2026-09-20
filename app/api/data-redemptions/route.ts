@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { sendRedemptionMessage } from "@/lib/telegram-redemption";
 
 const SUPABASE_URL="https://glkpxyanjsktmwkvvsxt.supabase.co";
 function tg(initData:string,token:string){const p=new URLSearchParams(initData);const h=p.get("hash");if(!h)return null;p.delete("hash");const s=[...p.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${k}=${v}`).join("\n");const key=crypto.createHmac("sha256","WebAppData").update(token.trim()).digest();const calc=crypto.createHmac("sha256",key).update(s).digest("hex");if(h.length!==calc.length||!crypto.timingSafeEqual(Buffer.from(h),Buffer.from(calc)))return null;try{return JSON.parse(p.get("user")||"{}") as {id?:number}}catch{return null}}
@@ -27,6 +28,24 @@ export async function POST(req:NextRequest){
   if(pending)return NextResponse.json({error:"You already have a pending data redemption."},{status:409});
   const {data:red,error}=await db.from("data_redemptions").insert({user_id:user.id,network:"MTN",phone_number:phone,amount_mb:mb,balance_type:type,status:"pending"}).select("id,network,phone_number,amount_mb,status").single();
   if(error)throw error;
+  const { count: redemptionCount } = await db.from("data_redemptions").select("id",{count:"exact",head:true}).eq("user_id",user.id);
+  const { data: profile } = await db.from("users").select("username,first_name").eq("id",user.id).maybeSingle();
+  try {
+    const message = await sendRedemptionMessage({
+      id: String(red.id),
+      username: profile?.username,
+      firstName: profile?.first_name,
+      amountMb: mb,
+      network: "MTN",
+      phoneNumber: phone,
+      redemptionNumber: Number(redemptionCount || 1),
+    });
+    if (message?.message_id) {
+      await db.from("data_redemptions").update({telegram_message_id: message.message_id}).eq("id",red.id);
+    }
+  } catch (telegramError) {
+    console.error("Telegram redemption notification failed:", telegramError);
+  }
   const update=type==="referral"?{referral_balance:available-mb}:{balance:available-mb};
   const {error:walletError}=await db.from("wallets").update(update).eq("user_id",user.id);
   if(walletError){await db.from("data_redemptions").delete().eq("id",red.id);throw walletError}
