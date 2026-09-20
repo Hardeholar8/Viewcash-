@@ -7,7 +7,7 @@ const SUPABASE_URL="https://glkpxyanjsktmwkvvsxt.supabase.co";
 function tg(initData:string,token:string){const p=new URLSearchParams(initData);const h=p.get("hash");if(!h)return null;p.delete("hash");const s=[...p.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${k}=${v}`).join("\n");const key=crypto.createHmac("sha256","WebAppData").update(token.trim()).digest();const calc=crypto.createHmac("sha256",key).update(s).digest("hex");if(h.length!==calc.length||!crypto.timingSafeEqual(Buffer.from(h),Buffer.from(calc)))return null;try{return JSON.parse(p.get("user")||"{}") as {id?:number}}catch{return null}}
 export async function POST(req:NextRequest){
  try{
-  const b=await req.json().catch(()=>({})); const token=process.env.TELEGRAM_BOT_TOKEN, key=process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const b=await req.json().catch(()=>({})); const token=process.env.TELEGRAM_REDEMPTION_BOT_TOKEN, key=process.env.SUPABASE_SERVICE_ROLE_KEY;
   const u=tg(String(b.initData||""),token||""); const mb=Math.floor(Number(b.amount_mb||0)); const phone=String(b.phone_number||"").replace(/\D/g,"");
   const type=b.balance_type==="referral"?"referral":"tasks";
   if(!token||!key)return NextResponse.json({error:"SERVER_CONFIG_ERROR"},{status:500});
