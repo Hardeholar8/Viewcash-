@@ -21,6 +21,11 @@ export async function POST(req:NextRequest){
   const {data:user}=await db.from("users").select("id,status,redemption_override,redemption_unlocked").eq("telegram_id",u.id).maybeSingle();
   if(!user)return NextResponse.json({error:"USER_NOT_FOUND"},{status:404});
   if(user.status!=="active")return NextResponse.json({error:"ACCOUNT_NOT_ACTIVE"},{status:403});
+  const {data:maxSetting}=await db.from("settings").select("value").eq("key","fraud_max_redemptions_per_day").maybeSingle();
+  const maxPerDay=Math.max(1,Math.floor(Number((maxSetting?.value as {value?:number}|null)?.value||10)));
+  const dayStart=new Date(); dayStart.setHours(0,0,0,0);
+  const {count:todayRedemptions}=await db.from("data_redemptions").select("id",{count:"exact",head:true}).eq("user_id",user.id).gte("created_at",dayStart.toISOString());
+  if(Number(todayRedemptions||0)>=maxPerDay)return NextResponse.json({error:`Daily redemption limit reached. Maximum: ${maxPerDay} redemption requests per day.`},{status:429});
   if(!user.redemption_override && !user.redemption_unlocked){
    const { count: qualifiedReferrals } = await db.from("referrals").select("id",{count:"exact",head:true}).eq("referrer_id",user.id).eq("status","qualified");
    if(Number(qualifiedReferrals||0) < 10) return NextResponse.json({error:`Redeem Data is locked. Complete the referral requirement first: ${Number(qualifiedReferrals||0)}/10 qualified referrals.`},{status:403});
