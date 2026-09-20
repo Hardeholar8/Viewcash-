@@ -65,7 +65,7 @@ var check=function(){
  fetch("/api/telegram/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({initData:data}),cache:"no-store"})
  .then(function(r){return r.json().catch(function(){return {}})})
  .then(function(d){
-   if(!d||d.activated===false)return;
+   if(!d)return;
    var coins=Number(d.coins||0), ref=Number(d.referral_coins||0);
    if(!started){lastCoins=coins;lastRef=ref;started=true;return;}
    if(coins!==lastCoins||ref!==lastRef){lastCoins=coins;lastRef=ref;window.location.reload();}
@@ -78,9 +78,9 @@ window.addEventListener("pageshow",check);
         </Script>
         <Script id="viewcash-referral-stats" strategy="afterInteractive">
           {`(function(){
-var timer=null,lastReferred=null,lastActivated=null;
+var timer=null,lastReferred=null,lastQualified=null;
 var clean=function(v){return String(v||"").replace(/\\s+/g," ").trim()};
-var render=function(referred,activated){
+var render=function(referred,qualified){
  var headings=document.querySelectorAll("h3"),target=null;
  headings.forEach(function(h){if(clean(h.innerText||h.textContent)==="Your referral link")target=h});
  if(!target)return;
@@ -92,7 +92,7 @@ var render=function(referred,activated){
    stats.className="viewcash-referral-stats mt-4 grid grid-cols-2 gap-3";
    target.parentElement.after(stats);
  }
- stats.innerHTML='<div class="rounded-2xl border border-white/10 bg-white/[.035] p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">People Referred</p><p class="mt-1 text-xl font-black text-slate-100">'+Number(referred||0).toLocaleString()+'</p></div><div class="rounded-2xl border border-emerald-300/15 bg-emerald-400/[.05] p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Activated Referrals</p><p class="mt-1 text-xl font-black text-emerald-300">'+Number(activated||0).toLocaleString()+'</p></div>';
+ stats.innerHTML='<div class="rounded-2xl border border-white/10 bg-white/[.035] p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">People Referred</p><p class="mt-1 text-xl font-black text-slate-100">'+Number(referred||0).toLocaleString()+'</p></div><div class="rounded-2xl border border-emerald-300/15 bg-emerald-400/[.05] p-3"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Qualified Referrals</p><p class="mt-1 text-xl font-black text-emerald-300">'+Number(activated||0).toLocaleString()+'</p></div>';
 };
 var check=function(){
  var tg=window.Telegram&&window.Telegram.WebApp,data=tg&&tg.initData;
@@ -101,11 +101,11 @@ var check=function(){
  .then(function(r){return r.json().catch(function(){return {}})})
  .then(function(d){
    if(!d)return;
-   lastReferred=Number(d.referred_count||0);lastActivated=Number(d.activated_referral_count||0);render(lastReferred,lastActivated);
+   lastReferred=Number(d.referred_count||0);lastQualified=Number(d.qualified_referral_count||0);render(lastReferred,lastQualified);
  }).catch(function(){});
 };
 var start=function(){if(timer)return;check();timer=window.setInterval(check,5000)};
-new MutationObserver(function(){if(lastReferred!==null)render(lastReferred,lastActivated)}).observe(document.documentElement,{subtree:true,childList:true});
+new MutationObserver(function(){if(lastReferred!==null)render(lastReferred,lastQualified)}).observe(document.documentElement,{subtree:true,childList:true});
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
 })();`}
         </Script>
