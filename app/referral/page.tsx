@@ -6,7 +6,7 @@ import { ArrowLeft, Copy, Gift, Users, Wallet } from "lucide-react";
 type Session = {
   referral_link?: string;
   referral_code?: string;
-  referral_balance?: number;
+  referral_balance_mb?: number;
   referred_count?: number;
   activated_referral_count?: number;
   activated?: boolean;
@@ -78,18 +78,18 @@ export default function ReferralPage() {
         </div>
       </header>
 
-      {status ? <div className="mt-6 rounded-3xl border border-white/10 bg-white/[.035] p-4 text-sm leading-6 text-slate-400">{status}</div> : (
+      {status ? <div className="mt-6 rounded-2xl border border-white/10 bg-white/[.035] p-4 text-sm leading-6 text-slate-400">{status}</div> : (
         <>
           <section className="mt-6 rounded-3xl border border-yellow-300/15 bg-gradient-to-br from-yellow-400/[.12] to-white/[.025] p-5">
             <div className="flex items-center gap-2 text-cyan-300"><Wallet size={17} /><span className="text-[10px] font-bold uppercase tracking-[.18em]">Referral Balance</span></div>
-            <p className="mt-2 text-3xl font-black">{Number(data.referral_balance || 0).toLocaleString()}</p>
+            <p className="mt-2 text-2xl font-black">{Number(data.referral_balance_mb || 0).toLocaleString()}</p>
             <p className="mt-1 text-xs text-slate-500">Available referral balance</p>
             <button onClick={() => window.location.assign("/withdraw?wallet=affiliate")} className="mt-4 w-full rounded-2xl bg-yellow-400 py-3 text-sm font-extrabold text-black">Withdraw Referral Balance</button>
           </section>
 
           <section className="mt-4 grid grid-cols-2 gap-3">
             <div className="rounded-3xl border border-white/10 bg-white/[.035] p-4"><Users size={18} className="text-cyan-300" /><p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">People Referred</p><p className="mt-1 text-2xl font-black">{Number(data.referred_count || 0).toLocaleString()}</p></div>
-            <div className="rounded-3xl border border-emerald-300/15 bg-emerald-400/[.05] p-4"><Gift size={18} className="text-emerald-300" /><p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Activated Referrals</p><p className="mt-1 text-2xl font-black text-emerald-300">{Number(data.activated_referral_count || 0).toLocaleString()}</p></div>
+            <div className="rounded-3xl border border-emerald-300/15 bg-emerald-400/[.05] p-4"><Gift size={18} className="text-emerald-300" /><p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Referral Activity</p><p className="mt-1 text-2xl font-black text-emerald-300">{Number(data.activated_referral_count || 0).toLocaleString()}</p></div>
           </section>
 
           <section className="mt-4 rounded-3xl border border-white/10 bg-white/[.035] p-4">
