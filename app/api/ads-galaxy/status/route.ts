@@ -18,7 +18,6 @@ export async function POST(req: Request) {
     if(!telegramId||!requestId||!SERVICE_ROLE_KEY) return NextResponse.json({ok:false,error:"INVALID_REQUEST"},{status:400});
     const db=createClient(SUPABASE_URL,SERVICE_ROLE_KEY,{auth:{autoRefreshToken:false,persistSession:false}});
     const {data:user}=await db.from("users").select("id").eq("telegram_id",telegramId).maybeSingle(); if(!user) return NextResponse.json({ok:false,error:"USER_NOT_FOUND"},{status:404});
-    const {data:tx}=await db.from("transactions").select("amount").eq("user_id",user.id).eq("reference",`adsgalaxy:${requestId}`).maybeSingle();
-    return NextResponse.json({ok:true,credited:Boolean(tx),reward_mb:Number(tx?.amount||0)});
+    const {data:tx}=await db.from("transactions").select("amount,created_at").eq("user_id",user.id).eq("reference",`adsgalaxy:${requestId}`).maybeSingle(); const start=new Date(); start.setHours(0,0,0,0); const {count}=await db.from("ad_rewards").select("id",{count:"exact",head:true}).eq("user_id",user.id).eq("provider","adsgalaxy").gte("created_at",start.toISOString()); const {data:setting}=await db.from("settings").select("value").eq("key","daily_ad_limit_adsgalaxy").maybeSingle(); const limit=Number(setting?.value?.count||0); if(limit>0&&(count||0)>=limit && !tx) return NextResponse.json({ok:false,error:"DAILY_AD_LIMIT_REACHED"},{status:429}); return NextResponse.json({ok:true,credited:Boolean(tx),reward_mb:Number(tx?.amount||0),used_ads:count||0,daily_ad_limit:limit});
   } catch { return NextResponse.json({ok:false,error:"STATUS_CHECK_FAILED"},{status:500}); }
 }
