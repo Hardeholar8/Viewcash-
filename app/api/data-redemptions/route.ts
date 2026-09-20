@@ -19,15 +19,15 @@ export async function POST(req:NextRequest){
   if(user.status!=="active")return NextResponse.json({error:"ACCOUNT_NOT_ACTIVE"},{status:403});
   const { count: qualifiedReferrals } = await db.from("referrals").select("id",{count:"exact",head:true}).eq("referrer_id",user.id).eq("status","qualified");
   if(Number(qualifiedReferrals||0) < 10) return NextResponse.json({error:`Redeem Data is locked. Complete the referral requirement first: ${Number(qualifiedReferrals||0)}/10 qualified referrals.`},{status:403});
-  const {data:wallet}=await db.from("wallets").select("coins,referral_balance").eq("user_id",user.id).maybeSingle();
+  const {data:wallet}=await db.from("wallets").select("balance,referral_balance").eq("user_id",user.id).maybeSingle();
   if(!wallet)return NextResponse.json({error:"WALLET_NOT_FOUND"},{status:404});
-  const available=type==="referral"?Number(wallet.referral_balance||0):Number(wallet.coins||0);
+  const available=type==="referral"?Number(wallet.referral_balance||0):Number(wallet.balance||0);
   if(mb>available)return NextResponse.json({error:`Insufficient data balance. Available: ${available>=1024?(available/1024).toFixed(2)+" GB":available+" MB"}.`},{status:400});
   const {data:pending}=await db.from("data_redemptions").select("id").eq("user_id",user.id).eq("status","pending").maybeSingle();
   if(pending)return NextResponse.json({error:"You already have a pending data redemption."},{status:409});
   const {data:red,error}=await db.from("data_redemptions").insert({user_id:user.id,network:"MTN",phone_number:phone,amount_mb:mb,balance_type:type,status:"pending"}).select("id,network,phone_number,amount_mb,status").single();
   if(error)throw error;
-  const update=type==="referral"?{referral_balance:available-mb}:{coins:available-mb};
+  const update=type==="referral"?{referral_balance:available-mb}:{balance:available-mb};
   const {error:walletError}=await db.from("wallets").update(update).eq("user_id",user.id);
   if(walletError){await db.from("data_redemptions").delete().eq("id",red.id);throw walletError}
   return NextResponse.json({ok:true,redemption:red,message:"MTN data redemption submitted. Your request is pending fulfillment."});
