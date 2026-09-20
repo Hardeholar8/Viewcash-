@@ -38,7 +38,7 @@ const isTransient = (message: string) => /gateway timeout|bad gateway|service un
 async function lookupUser(supabase: any, telegramId: number): Promise<any> {
   let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,device_fingerprint_hash,ip_fingerprint_hash,user_agent_fingerprint_hash,client_signal_hash").eq("telegram_id", telegramId).maybeSingle();
+    const result = await supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,redemption_override,redemption_unlocked,device_fingerprint_hash,ip_fingerprint_hash,user_agent_fingerprint_hash,client_signal_hash").eq("telegram_id", telegramId).maybeSingle();
     if (!result.error) return result.data;
     lastError = result.error;
     if (!isTransient(result.error.message || "")) break;
@@ -132,13 +132,13 @@ export async function POST(req: NextRequest) {
       supabase.from("users").select("id", { count: "exact", head: true }).eq("referred_by", user.id),
       supabase.from("referrals").select("id", { count: "exact", head: true }).eq("referrer_id", user.id).eq("status", "qualified")
     ]);
-    const { data: unlockSetting } = await supabase.from("settings").select("value").eq("key", "referral_unlock_requirement").maybeSingle();
+    const { data: unlockSetting } = await supabase.from("settings").select("value").eq("key", "referral_unlock_required").maybeSingle();
     const referralUnlockRequired = Number((unlockSetting?.value as { qualified_referrals?: number } | null)?.qualified_referrals || 10);
-    const redemptionUnlocked = Number(qualifiedReferralCount || 0) >= referralUnlockRequired;
+    const redemptionUnlocked = Boolean(user.redemption_override || user.redemption_unlocked || Number(qualifiedReferralCount || 0) >= referralUnlockRequired);
     const displayName = user.username ? `@${user.username}` : user.first_name || "Telegram User";
     const referralLink = `https://t.me/${BOT_USERNAME}?startapp=${encodeURIComponent(user.referral_code)}`;
     const dataBalanceMb = Number(wallet.balance ?? 0); const referralDataMb = Number(wallet.referral_balance ?? 0);
-    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, redemption_minimums: { task_mb: 100, referral_mb: 100 }, referral_code: user.referral_code, referral_link: referralLink, referred_count: Number(referredCount || 0), qualified_referral_count: Number(qualifiedReferralCount || 0), referral_unlock_required: referralUnlockRequired, redemption_unlocked: redemptionUnlocked, balance_mb: dataBalanceMb, referral_balance_mb: referralDataMb, total_earned_mb: Number(wallet.total_earned ?? 0), total_redeemed_mb: Number(wallet.total_withdrawn ?? 0), new_user: isNew });
+    return NextResponse.json({ ok: true, telegram_id: telegramUser.id, username: user.username, first_name: user.first_name, last_name: user.last_name, display_name: displayName, redemption_minimums: { task_mb: Number((await supabase.from("settings").select("value").eq("key","minimum_data_redemption_mb").maybeSingle()).data?.value?.amount || 100), referral_mb: Number((await supabase.from("settings").select("value").eq("key","minimum_data_redemption_mb").maybeSingle()).data?.value?.amount || 100) }, referral_code: user.referral_code, referral_link: referralLink, referred_count: Number(referredCount || 0), qualified_referral_count: Number(qualifiedReferralCount || 0), referral_unlock_required: referralUnlockRequired, redemption_unlocked: redemptionUnlocked, balance_mb: dataBalanceMb, referral_balance_mb: referralDataMb, total_earned_mb: Number(wallet.total_earned ?? 0), total_redeemed_mb: Number(wallet.total_withdrawn ?? 0), new_user: isNew });
   } catch (error) {
     console.error("ViewCash Telegram session error", error);
     const message = error instanceof Error ? error.message : "VIEWCASH_SESSION_ERROR";
