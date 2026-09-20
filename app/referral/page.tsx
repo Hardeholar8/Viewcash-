@@ -8,7 +8,9 @@ type Session = {
   referral_code?: string;
   referral_balance_mb?: number;
   referred_count?: number;
-  activated_referral_count?: number;
+  qualified_referral_count?: number;
+  referral_unlock_required?: number;
+  redemption_unlocked?: boolean;
   activated?: boolean;
 };
 
@@ -83,8 +85,13 @@ export default function ReferralPage() {
           <section className="mt-6 rounded-3xl border border-yellow-300/15 bg-gradient-to-br from-yellow-400/[.12] to-white/[.025] p-5">
             <div className="flex items-center gap-2 text-cyan-300"><Wallet size={17} /><span className="text-[10px] font-bold uppercase tracking-[.18em]">Referral Balance</span></div>
             <p className="mt-2 text-2xl font-black">{Number(data.referral_balance_mb || 0).toLocaleString()}</p>
-            <p className="mt-1 text-xs text-slate-500">Available referral balance</p>
-            <button onClick={() => window.location.assign("/withdraw?wallet=affiliate")} className="mt-4 w-full rounded-2xl bg-yellow-400 py-3 text-sm font-extrabold text-black">Withdraw Referral Balance</button>
+            <p className="mt-1 text-xs text-slate-500">Referral data balance</p>
+            <div className="mt-4 rounded-2xl bg-black/20 p-3">
+              <div className="flex items-center justify-between text-xs"><span className="text-slate-400">Qualified referrals</span><span className="font-bold">{Number(data.qualified_referral_count || 0)}/{Number(data.referral_unlock_required || 10)}</span></div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-yellow-400" style={{width:`${Math.min(100,Number(data.qualified_referral_count||0)/Math.max(1,Number(data.referral_unlock_required||10))*100)}%`}} /></div>
+              <p className="mt-2 text-[11px] text-slate-500">{data.redemption_unlocked ? "Redeem Data portal unlocked." : "Each referred member must complete the required task before the referral counts."}</p>
+            </div>
+            <button onClick={() => window.location.assign("/withdraw?wallet=affiliate")} className="mt-4 w-full rounded-2xl bg-yellow-400 py-3 text-sm font-extrabold text-black" disabled={!data.redemption_unlocked} style={{opacity:data.redemption_unlocked?1:.45}}>Redeem Data</button>
           </section>
 
           <section className="mt-4 grid grid-cols-2 gap-3">
