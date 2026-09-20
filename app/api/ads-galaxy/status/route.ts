@@ -19,6 +19,6 @@ export async function POST(req: Request) {
     const db=createClient(SUPABASE_URL,SERVICE_ROLE_KEY,{auth:{autoRefreshToken:false,persistSession:false}});
     const {data:user}=await db.from("users").select("id").eq("telegram_id",telegramId).maybeSingle(); if(!user) return NextResponse.json({ok:false,error:"USER_NOT_FOUND"},{status:404});
     const {data:tx}=await db.from("transactions").select("amount").eq("user_id",user.id).eq("reference",`adsgalaxy:${requestId}`).maybeSingle();
-    return NextResponse.json({ok:true,credited:Boolean(tx),reward_coins:Number(tx?.amount||0)});
+    return NextResponse.json({ok:true,credited:Boolean(tx),reward_mb:Number(tx?.amount||0)});
   } catch { return NextResponse.json({ok:false,error:"STATUS_CHECK_FAILED"},{status:500}); }
 }
