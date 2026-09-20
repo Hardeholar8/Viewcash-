@@ -17,6 +17,8 @@ export async function POST(req:NextRequest){
   const {data:user}=await db.from("users").select("id,status").eq("telegram_id",u.id).maybeSingle();
   if(!user)return NextResponse.json({error:"USER_NOT_FOUND"},{status:404});
   if(user.status!=="active")return NextResponse.json({error:"ACCOUNT_NOT_ACTIVE"},{status:403});
+  const { count: qualifiedReferrals } = await db.from("referrals").select("id",{count:"exact",head:true}).eq("referrer_id",user.id).eq("status","qualified");
+  if(Number(qualifiedReferrals||0) < 10) return NextResponse.json({error:`Redeem Data is locked. Complete the referral requirement first: ${Number(qualifiedReferrals||0)}/10 qualified referrals.`},{status:403});
   const {data:wallet}=await db.from("wallets").select("coins,referral_balance").eq("user_id",user.id).maybeSingle();
   if(!wallet)return NextResponse.json({error:"WALLET_NOT_FOUND"},{status:404});
   const available=type==="referral"?Number(wallet.referral_balance||0):Number(wallet.coins||0);
