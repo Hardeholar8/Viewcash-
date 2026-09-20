@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     if (userError) throw userError;
     if (!user || user.status !== "active") return NextResponse.json({ error: "USER_NOT_ELIGIBLE" }, { status: 403 });
 
-    const { data: limitSetting } = await db.from("settings").select("value").eq("key","daily_ad_limit").maybeSingle();
+    const { data: limitSetting } = await db.from("settings").select("value").eq("key","daily_ad_limit_adsgalaxy").maybeSingle();
     const { data: rewardSetting } = await db.from("settings").select("value").eq("key","ad_reward_mb").maybeSingle();
     const limit = Number(limitSetting?.value?.count || 0);
     const rewardMb = Number(rewardSetting?.value?.amount || 0);
