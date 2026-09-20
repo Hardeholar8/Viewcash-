@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const supabase = db(req);
   if (!supabase) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
   const search = req.nextUrl.searchParams.get("search")?.trim() || "";
-  let query = supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,status,created_at,activated,account_level,wallets(balance,referral_balance,total_earned,total_withdrawn)").order("created_at", { ascending: false }).limit(100);
+  let query = supabase.from("users").select("id,telegram_id,username,first_name,last_name,referral_code,status,created_at,wallets(balance,referral_balance,total_earned,total_withdrawn)").order("created_at", { ascending: false }).limit(100);
   if (search) query = query.or(`username.ilike.%${search}%,first_name.ilike.%${search}%,last_name.ilike.%${search}%`);
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: "ADMIN_USERS_ERROR" }, { status: 500 });
