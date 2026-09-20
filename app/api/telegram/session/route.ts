@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 const VIEWCASH_SUPABASE_URL = "https://glkpxyanjsktmwkvvsxt.supabase.co";
 const BOT_USERNAME = "Viewcashe_bot";
 
+function fingerprint(value: string) { return crypto.createHash("sha256").update(value).digest("hex"); }
+
 function validateInitData(initData: string, botToken: string) {
   if (!initData) throw new Error("TELEGRAM_INIT_DATA_MISSING");
   const params = new URLSearchParams(initData);
@@ -59,23 +61,34 @@ async function lookupWallet(supabase: any, userId: string): Promise<any> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { initData } = await req.json();
+    const { initData, deviceId } = await req.json();
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!botToken || !serviceRoleKey) throw new Error("VIEWCASH_SERVER_CONFIG_ERROR");
     const { user: telegramUser, startParam } = validateInitData(String(initData || ""), botToken);
     const supabase = createClient(VIEWCASH_SUPABASE_URL, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } });
     const referralCode = `VC${telegramUser.id.toString(36).toUpperCase()}`;
+    const deviceFingerprintHash = deviceId ? fingerprint(String(deviceId)) : null;
+    const forwardedFor = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "";
+    const ip = forwardedFor.split(",")[0].trim();
+    const ipFingerprintHash = ip ? fingerprint(ip) : null;
+    const userAgentFingerprintHash = fingerprint(req.headers.get("user-agent") || "");
     let user: any = await lookupUser(supabase, telegramUser.id);
     let isNew = false;
     if (!user) {
       isNew = true;
       let referredBy: string | null = null;
       if (startParam) {
-        const { data: referrer } = await supabase.from("users").select("id").eq("referral_code", startParam).maybeSingle();
-        if (referrer?.id) referredBy = referrer.id;
+        const { data: referrer } = await supabase.from("users").select("id,telegram_id,device_fingerprint_hash,ip_fingerprint_hash,user_agent_fingerprint_hash").eq("referral_code", startParam).maybeSingle();
+        if (referrer?.id) {
+          const sameDevice = Boolean(deviceFingerprintHash && referrer.device_fingerprint_hash && deviceFingerprintHash === referrer.device_fingerprint_hash);
+          const sameIpAndAgent = Boolean(ipFingerprintHash && referrer.ip_fingerprint_hash && ipFingerprintHash === referrer.ip_fingerprint_hash && userAgentFingerprintHash === referrer.user_agent_fingerprint_hash);
+          const sameTelegram = Number(referrer.telegram_id) === Number(telegramUser.id);
+          if (!sameDevice && !sameIpAndAgent && !sameTelegram) referredBy = referrer.id;
+          else if (sameDevice || sameIpAndAgent || sameTelegram) referredBy = null;
+        }
       }
-      const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode, referred_by: referredBy }).select("id,telegram_id,username,first_name,last_name,referral_code").single();
+      const { data, error } = await supabase.from("users").insert({ telegram_id: telegramUser.id, username: telegramUser.username ?? null, first_name: telegramUser.first_name ?? null, last_name: telegramUser.last_name ?? null, referral_code: referralCode, referred_by: referredBy, device_fingerprint_hash: deviceFingerprintHash, ip_fingerprint_hash: ipFingerprintHash, user_agent_fingerprint_hash: userAgentFingerprintHash }).select("id,telegram_id,username,first_name,last_name,referral_code").single();
       if (error) {
         if (error.code === "23505") {
           const existing = await lookupUser(supabase, telegramUser.id);
@@ -87,6 +100,17 @@ export async function POST(req: NextRequest) {
         }
       } else {
         user = data;
+      }
+      if (startParam && !referredBy) {
+        const { data: referrer } = await supabase.from("users").select("id,telegram_id,device_fingerprint_hash,ip_fingerprint_hash,user_agent_fingerprint_hash").eq("referral_code", startParam).maybeSingle();
+        if (referrer?.id && referrer.id !== user.id) {
+          const sameDevice = Boolean(deviceFingerprintHash && referrer.device_fingerprint_hash && deviceFingerprintHash === referrer.device_fingerprint_hash);
+          const sameIpAndAgent = Boolean(ipFingerprintHash && referrer.ip_fingerprint_hash && ipFingerprintHash === referrer.ip_fingerprint_hash && userAgentFingerprintHash === referrer.user_agent_fingerprint_hash);
+          const sameTelegram = Number(referrer.telegram_id) === Number(telegramUser.id);
+          if (sameDevice || sameIpAndAgent || sameTelegram) {
+            await supabase.from("fraud_flags").insert({ user_id: user.id, reason: "Self-referral rejected", severity: "high", metadata: { referrer_id: referrer.id, match: sameDevice ? "device" : sameIpAndAgent ? "ip_and_user_agent" : "telegram" } });
+          }
+        }
       }
       const { error: walletError } = await supabase.from("wallets").insert({ user_id: user.id });
       if (walletError) throw new Error(supabaseError("SUPABASE_WALLET_CREATE_ERROR", walletError));
