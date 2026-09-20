@@ -22,6 +22,7 @@ export default function WithdrawPage() {
   const [unlocked, setUnlocked] = useState(false);
   const [unlockRequired, setUnlockRequired] = useState(10);
   const [qualifiedReferrals, setQualifiedReferrals] = useState(0);
+  const [minimumMb, setMinimumMb] = useState(100);
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
@@ -50,6 +51,7 @@ export default function WithdrawPage() {
         setUnlocked(Boolean(data.redemption_unlocked));
         setUnlockRequired(Number(data.referral_unlock_required || 10));
         setQualifiedReferrals(Number(data.qualified_referral_count || 0));
+        setMinimumMb(Math.max(1, Number(data.redemption_minimums?.task_mb || 100)));
       })
       .catch((error) => {
         setMessage(error.message || "Unable to load data balance");
@@ -62,8 +64,8 @@ export default function WithdrawPage() {
     const mb = Math.floor(Number(amount));
     setMessage("");
 
-    if (!Number.isInteger(mb) || mb < 100) {
-      setMessage("Enter at least 100 MB.");
+    if (!Number.isInteger(mb) || mb < minimumMb) {
+      setMessage("Enter at least ${minimumMb} MB.");
       return;
     }
 
@@ -139,7 +141,7 @@ export default function WithdrawPage() {
             {formatData(available)}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            Minimum redemption: 100 MB
+            Minimum redemption: {minimumMb} MB
           </p>
         </div>
 
@@ -170,7 +172,7 @@ export default function WithdrawPage() {
           />
 
           <div className="grid grid-cols-4 gap-2">
-            {[100, 250, 500, 1024].map((value) => (
+            {[minimumMb, 250, 500, 1024].filter((value,index,array)=>value>0&&array.indexOf(value)===index).map((value) => (
               <button
                 key={value}
                 onClick={() => setAmount(String(value))}
