@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!botToken || !serviceRoleKey) throw new Error("VIEWCASH_SERVER_CONFIG_ERROR");
     const { user: telegramUser, startParam } = validateInitData(String(initData || ""), botToken);
-    const supabase = createClient(VIEWCASH_SUPABASE_URL, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    const supabase = createClient(VIEWCASH_SUPABASE_URL, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } });
     const referralCode = `VC${telegramUser.id.toString(36).toUpperCase()}`;
     let user: any = await lookupUser(supabase, telegramUser.id);
     let isNew = false;
