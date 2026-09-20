@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
     const rateCash_unused = Number((rateSetting?.value as { cash?: number } | null)?.cash || 100);
     const taskMinimumCash = Number(plan?.task_min_withdrawal || 0);
     const affiliateMinimum = Number(plan?.affiliate_min_withdrawal || 0);
-    const taskMinimumCoins = rateCoins > 0 && rateCash > 0 ? Math.ceil((taskMinimumCash / rateCash) * rateCoins) : 0;
+    
     const [{ count: referredCount }, { count: activatedReferralCount }] = await Promise.all([
       supabase.from("users").select("id", { count: "exact", head: true }).eq("referred_by", user.id),
       supabase.from("users").select("id", { count: "exact", head: true }).eq("referred_by", user.id).eq("activated", true)
