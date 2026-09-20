@@ -15,12 +15,12 @@ export async function GET(req: NextRequest) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key || !validAdminCookie(req.cookies.get("viewcash_admin")?.value, key)) return NextResponse.json({ error: "ADMIN_ACCESS_DENIED" }, { status: 403 });
   const supabase = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-  const [users, ads, withdrawals, flagged] = await Promise.all([
+  const [users, ads, redemptions, flagged] = await Promise.all([
     supabase.from("users").select("id", { count: "exact", head: true }),
     supabase.from("ad_rewards").select("id", { count: "exact", head: true }).eq("reward_event_type", "valued"),
-    supabase.from("withdrawals").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    supabase.from("data_redemptions").select("id", { count: "exact", head: true }).eq("status", "pending"),
     supabase.from("fraud_flags").select("id", { count: "exact", head: true }).eq("resolved", false),
   ]);
-  if (users.error || ads.error || withdrawals.error || flagged.error) return NextResponse.json({ error: "ADMIN_STATS_ERROR" }, { status: 500 });
-  return NextResponse.json({ users: users.count || 0, ads: ads.count || 0, withdrawals: withdrawals.count || 0, flagged: flagged.count || 0 });
+  if (users.error || ads.error || redemptions.error || flagged.error) return NextResponse.json({ error: "ADMIN_STATS_ERROR" }, { status: 500 });
+  return NextResponse.json({ users: users.count || 0, ads: ads.count || 0, redemptions: redemptions.count || 0, flagged: flagged.count || 0 });
 }
