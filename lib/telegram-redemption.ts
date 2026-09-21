@@ -29,6 +29,7 @@ function format(input: {
   status: string;
 }): string {
   const status = input.status === "completed" ? "✅ Status: Completed"
+    : input.status === "approved" ? "✅ Status: Approved"
     : input.status === "rejected" ? "❌ Status: Failed"
     : "⏳ Status: Processing";
   return [
